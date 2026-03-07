@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Payroll</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Payroll">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f0e0c">
+<link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22Weekly%20Wage%20Calculator%22%2C%22short_name%22%3A%22Payroll%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230f0e0c%22%2C%22theme_color%22%3A%22%230f0e0c%22%7D">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' fill='%230f0e0c' rx='80'/><text x='256' y='340' text-anchor='middle' font-size='280' fill='%23f5c842'>$</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0f0e0c; --surface:#161512; --surface2:#1e1c18;
+  --border:#2c2a24; --border2:#3a3830;
+  --accent:#f5c842; --accent2:#e8a020;
+  --green:#5ddc8a; --red:#f06060; --blue:#60b8f0; --purple:#b478ff;
+  --text:#f0ece0; --muted:#7a7260; --muted2:#4a4840;
+}
+body.light {
+  --bg:#f4f2ed; --surface:#ffffff; --surface2:#ede9e0;
+  --border:#d8d3c8; --border2:#c5bfb0;
+  --accent:#b8900a; --accent2:#9a6e00;
+  --green:#1a9045; --red:#c83030; --blue:#1860a0; --purple:#6030b0;
+  --text:#1a1710; --muted:#6a5e4e; --muted2:#a89e8c;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html{height:-webkit-fill-available;}
+body{background:var(--bg);color:var(--text);font-family:'DM Mono',monospace;min-height:100vh;min-height:-webkit-fill-available;padding:0 0 calc(68px + env(safe-area-inset-bottom));transition:background 0.25s,color 0.25s;}
+
+/* HEADER */
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 22px 12px;padding-top:calc(14px + env(safe-area-inset-top));display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:100;}
+.logo h1{font-family:'Syne',sans-serif;font-weight:800;font-size:1.4rem;color:var(--accent);letter-spacing:-0.02em;line-height:1;}
+.logo .company{font-size:0.58rem;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-top:2px;}
+.header-right{display:flex;align-items:center;gap:8px;}
+.week-info{display:flex;flex-direction:column;align-items:flex-end;gap:3px;}
+.week-label{font-size:0.56rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;}
+#week-range{font-family:'Syne',sans-serif;font-weight:700;font-size:0.92rem;color:var(--accent);cursor:pointer;border-bottom:1px dashed rgba(245,200,66,0.4);padding-bottom:1px;}
+.payday-badge{background:rgba(93,220,138,0.12);border:1px solid rgba(93,220,138,0.3);color:var(--green);font-size:0.54rem;letter-spacing:0.1em;text-transform:uppercase;padding:2px 7px;border-radius:2px;}
+.theme-btn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-size:0.95rem;width:30px;height:30px;border-radius:5px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s;flex-shrink:0;}
+.theme-btn:hover{border-color:var(--accent);}
+
+/* WEEK NAV */
+.week-nav{display:flex;align-items:center;gap:7px;margin:12px 22px 0;flex-wrap:wrap;}
+.week-nav button{background:var(--surface2);border:1px solid var(--border);color:var(--muted);cursor:pointer;font-family:'DM Mono',monospace;font-size:0.68rem;padding:6px 12px;border-radius:4px;transition:all 0.15s;}
+.week-nav button:hover{border-color:var(--accent);color:var(--accent);}
+.today-btn{background:rgba(245,200,66,0.08)!important;border-color:rgba(245,200,66,0.25)!important;color:var(--accent)!important;}
+.cal-btn{background:rgba(96,184,240,0.08)!important;border-color:rgba(96,184,240,0.25)!important;color:var(--blue)!important;}
+.week-num{font-size:0.65rem;color:var(--muted);margin-left:2px;}
+
+/* MAIN */
+.main{padding:14px 22px;display:flex;flex-direction:column;gap:14px;}
+.employees-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(490px,1fr));gap:13px;}
+
+/* EMP CARD */
+.emp-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;transition:border-color 0.2s;}
+.emp-card.ot-warning{border-color:rgba(232,160,32,0.55);}
+.emp-header{display:flex;align-items:center;gap:10px;padding:11px 15px;border-bottom:1px solid var(--border);background:var(--surface2);flex-wrap:wrap;}
+.emp-avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:700;font-size:0.88rem;flex-shrink:0;}
+.emp-info{flex:1;min-width:90px;}
+.emp-name-input{background:transparent;border:none;font-family:'Syne',sans-serif;font-weight:700;font-size:0.92rem;color:var(--text);outline:none;width:100%;}
+.emp-name-input:focus{color:var(--accent);}
+.emp-role-input{background:transparent;border:none;font-family:'DM Mono',monospace;font-size:0.6rem;color:var(--muted);outline:none;width:100%;letter-spacing:0.06em;text-transform:uppercase;margin-top:1px;}
+.emp-header-right{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+.ot-badge{display:none;background:rgba(232,160,32,0.15);border:1px solid rgba(232,160,32,0.4);color:var(--accent2);font-size:0.54rem;letter-spacing:0.08em;text-transform:uppercase;padding:2px 6px;border-radius:2px;}
+.ot-badge.show{display:inline-flex;align-items:center;gap:2px;}
+.emp-rate-wrap{display:flex;align-items:center;gap:3px;}
+.rate-label{font-size:0.56rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;}
+.rate-prefix{color:var(--accent);font-size:0.8rem;}
+.emp-rate-input{background:var(--surface);border:1px solid var(--border);color:var(--accent);font-family:'DM Mono',monospace;font-size:0.84rem;width:62px;padding:3px 5px;border-radius:2px;outline:none;text-align:right;}
+.emp-rate-input:focus{border-color:var(--accent);}
+
+/* COL HEADER */
+.day-col-header{display:grid;grid-template-columns:76px 1fr 1fr 52px 46px 32px;gap:3px;padding:4px 15px;border-bottom:1px solid var(--border);background:rgba(0,0,0,0.2);}
+.col-lbl{font-size:0.5rem;color:var(--muted2);text-transform:uppercase;letter-spacing:0.08em;display:flex;align-items:center;}
+
+/* DAY ROWS */
+.day-row{display:grid;grid-template-columns:76px 1fr 1fr 52px 46px 32px;align-items:center;gap:3px;padding:6px 15px;border-bottom:1px solid rgba(44,42,36,0.38);transition:background 0.12s;}
+.day-row:last-child{border-bottom:none;}
+.day-row:hover{background:rgba(255,255,255,0.013);}
+.day-row.today{background:rgba(245,200,66,0.03);}
+.day-row.today .day-name{color:var(--accent);}
+.day-name{font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;display:flex;flex-direction:column;gap:1px;}
+.day-date-sub{font-size:0.5rem;color:var(--muted2);text-transform:none;letter-spacing:0;}
+.today-dot{width:4px;height:4px;border-radius:50%;background:var(--accent);display:none;}
+.day-row.today .today-dot{display:inline-block;}
+.day-name-top{display:flex;align-items:center;gap:3px;}
+.time-input-wrap{display:flex;align-items:center;gap:3px;}
+.time-lbl{font-size:0.5rem;color:var(--muted2);text-transform:uppercase;min-width:10px;}
+.time-input{background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:'DM Mono',monospace;font-size:0.7rem;padding:3px 4px;border-radius:2px;width:100%;outline:none;transition:border-color 0.15s;}
+.time-input:focus{border-color:var(--accent);color:var(--accent);}
+.time-input:disabled{opacity:0.18;cursor:not-allowed;}
+.break-input{background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-family:'DM Mono',monospace;font-size:0.68rem;padding:3px 4px;border-radius:2px;width:100%;outline:none;text-align:center;transition:border-color 0.15s;}
+.break-input:focus{border-color:var(--accent2);color:var(--accent2);}
+.break-input:disabled{opacity:0.18;cursor:not-allowed;}
+.day-hours{font-size:0.72rem;color:var(--blue);text-align:center;font-weight:500;}
+.day-hours.zero{color:var(--muted2);}
+.day-hours.ot{color:var(--accent2);}
+.toggle-wrap{display:flex;align-items:center;gap:3px;}
+.toggle-btn{width:28px;height:15px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);cursor:pointer;position:relative;transition:all 0.2s;flex-shrink:0;display:block;}
+.toggle-btn::after{content:'';position:absolute;width:9px;height:9px;border-radius:50%;background:var(--muted2);top:2px;left:2px;transition:all 0.2s;}
+.toggle-btn.on{background:rgba(93,220,138,0.15);border-color:rgba(93,220,138,0.4);}
+.toggle-btn.on::after{background:var(--green);left:15px;}
+.tpl-quick{font-size:0.68rem;cursor:pointer;color:var(--muted2);transition:color 0.15s;line-height:1;}
+.tpl-quick:hover{color:var(--accent);}
+
+/* NOTES */
+.notes-section{padding:8px 15px 10px;border-top:1px solid var(--border);background:rgba(0,0,0,0.1);}
+.notes-header{display:flex;align-items:center;gap:6px;margin-bottom:5px;}
+.notes-label{font-size:0.54rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;}
+.notes-input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-family:'DM Mono',monospace;font-size:0.66rem;padding:6px 9px;border-radius:3px;outline:none;resize:vertical;min-height:40px;max-height:90px;line-height:1.5;transition:border-color 0.15s;}
+.notes-input:focus{border-color:var(--purple);color:var(--text);}
+.notes-input::placeholder{color:var(--muted2);}
+
+/* CARD FOOTER */
+.emp-footer{display:flex;align-items:center;justify-content:space-between;padding:9px 15px;background:var(--surface2);border-top:1px solid var(--border);flex-wrap:wrap;gap:8px;}
+.emp-stats{display:flex;gap:12px;flex-wrap:wrap;}
+.stat{display:flex;flex-direction:column;gap:1px;}
+.stat-label{font-size:0.53rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;}
+.stat-val{font-family:'Syne',sans-serif;font-weight:700;font-size:0.88rem;}
+.stat-val.hours{color:var(--blue);}
+.stat-val.wage{color:var(--green);}
+.stat-val.ot{color:var(--accent2);}
+.stat-val.brk{color:var(--muted);}
+.footer-btns{display:flex;gap:5px;flex-wrap:wrap;}
+.icon-btn{background:none;border:1px solid var(--border);color:var(--muted2);font-family:'DM Mono',monospace;font-size:0.58rem;padding:4px 8px;border-radius:3px;cursor:pointer;transition:all 0.15s;letter-spacing:0.04em;text-transform:uppercase;}
+.icon-btn:hover{border-color:var(--accent);color:var(--accent);}
+.icon-btn.danger:hover{border-color:var(--red);color:var(--red);}
+.icon-btn.copy-btn:hover{border-color:var(--green);color:var(--green);}
+
+/* SUMMARY */
+.summary-panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.summary-header{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid var(--border);background:var(--surface2);flex-wrap:wrap;gap:9px;}
+.summary-title{font-family:'Syne',sans-serif;font-weight:700;font-size:0.92rem;color:var(--text);}
+.summary-subtitle{font-size:0.58rem;color:var(--muted);margin-top:2px;}
+.summary-actions{display:flex;gap:6px;flex-wrap:wrap;}
+.action-btn{font-family:'DM Mono',monospace;font-size:0.6rem;letter-spacing:0.07em;text-transform:uppercase;padding:6px 11px;border-radius:3px;cursor:pointer;transition:all 0.15s;border:1px solid;}
+.btn-share{background:rgba(180,120,255,0.07);border-color:rgba(180,120,255,0.28);color:var(--purple);}
+.btn-share:hover{background:rgba(180,120,255,0.16);}
+.btn-csv-all{background:rgba(96,184,240,0.07);border-color:rgba(96,184,240,0.28);color:var(--blue);}
+.btn-csv-all:hover{background:rgba(96,184,240,0.16);}
+.btn-print{background:rgba(245,200,66,0.07);border-color:rgba(245,200,66,0.28);color:var(--accent);}
+.btn-print:hover{background:rgba(245,200,66,0.16);}
+.summary-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));}
+.summary-emp{padding:12px 16px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);}
+.sum-name{font-family:'Syne',sans-serif;font-weight:600;font-size:0.84rem;margin-bottom:6px;}
+.sum-row{display:flex;justify-content:space-between;font-size:0.65rem;margin-bottom:3px;}
+.sum-row .lbl{color:var(--muted);}
+.sum-row .val{color:var(--text);font-weight:500;}
+.sum-row.total-row{margin-top:6px;padding-top:6px;border-top:1px solid var(--border);}
+.sum-row.total-row .val{color:var(--green);font-size:0.8rem;}
+.sum-notes{margin-top:6px;font-size:0.58rem;color:var(--muted2);font-style:italic;white-space:pre-wrap;word-break:break-word;border-top:1px dashed var(--border);padding-top:5px;line-height:1.5;}
+.ot-note{padding:7px 18px;background:rgba(232,160,32,0.05);border-top:1px solid rgba(232,160,32,0.12);font-size:0.58rem;color:var(--muted);}
+.ot-note strong{color:var(--accent2);}
+.grand-total-row{padding:14px 18px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--border2);background:var(--surface2);flex-wrap:wrap;gap:12px;}
+.grand-label{font-family:'Syne',sans-serif;font-weight:700;font-size:0.92rem;color:var(--text);}
+.grand-label span{color:var(--muted);font-size:0.6rem;font-weight:400;display:block;margin-top:2px;}
+.grand-amount{font-family:'Syne',sans-serif;font-weight:800;font-size:1.75rem;color:var(--accent);text-shadow:0 0 36px rgba(245,200,66,0.18);}
+.grand-meta{display:flex;gap:16px;align-items:center;flex-wrap:wrap;}
+.grand-stat .gsl{font-size:0.53rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;}
+.grand-stat .gsv{font-family:'Syne',sans-serif;font-weight:700;font-size:0.86rem;color:var(--blue);}
+
+/* MONTHLY */
+.monthly-panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.monthly-header{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid var(--border);background:var(--surface2);flex-wrap:wrap;gap:8px;}
+.monthly-title{font-family:'Syne',sans-serif;font-weight:700;font-size:0.92rem;color:var(--text);}
+.monthly-nav{display:flex;align-items:center;gap:7px;}
+.monthly-nav button{background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-size:0.88rem;width:26px;height:26px;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s;}
+.monthly-nav button:hover{border-color:var(--accent);color:var(--accent);}
+.monthly-month-label{font-family:'Syne',sans-serif;font-weight:700;font-size:0.82rem;color:var(--accent);min-width:106px;text-align:center;}
+.monthly-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));}
+.monthly-week{padding:11px 15px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.12s;}
+.monthly-week:hover{background:rgba(245,200,66,0.04);}
+.monthly-week.active-week{background:rgba(245,200,66,0.08);border-left:2px solid var(--accent);}
+.mw-range{font-size:0.59rem;color:var(--muted);margin-bottom:5px;}
+.mw-total{font-family:'Syne',sans-serif;font-weight:700;font-size:1.05rem;color:var(--green);}
+.mw-hrs{font-size:0.59rem;color:var(--blue);margin-top:1px;}
+.mw-empty{color:var(--muted2)!important;}
+.monthly-footer{padding:11px 18px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border2);background:var(--surface2);}
+.mf-label{font-size:0.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;}
+.mf-val{font-family:'Syne',sans-serif;font-weight:700;font-size:1.25rem;color:var(--accent);}
+
+/* ADD BTN */
+.add-emp-btn{background:none;border:1px dashed var(--border);color:var(--muted);font-family:'DM Mono',monospace;font-size:0.66rem;letter-spacing:0.08em;text-transform:uppercase;padding:12px;border-radius:5px;cursor:pointer;transition:all 0.2s;width:100%;}
+.add-emp-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+/* AVATAR COLORS */
+.color-0{background:rgba(245,200,66,0.15);color:var(--accent);}
+.color-1{background:rgba(96,184,240,0.15);color:var(--blue);}
+.color-2{background:rgba(93,220,138,0.15);color:var(--green);}
+.color-3{background:rgba(240,96,96,0.15);color:var(--red);}
+.color-4{background:rgba(180,120,255,0.15);color:var(--purple);}
+.color-5{background:rgba(255,160,80,0.15);color:#ffa050;}
+
+/* STICKY BAR */
+.sticky-bar{position:fixed;bottom:0;left:0;right:0;background:rgba(20,19,16,0.97);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--border2);padding:9px 22px calc(9px + env(safe-area-inset-bottom));display:flex;align-items:center;justify-content:space-between;z-index:90;}
+body.light .sticky-bar{background:rgba(244,242,237,0.97);}
+.sb-left .sb-label{font-size:0.54rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;}
+.sb-left .sb-total{font-family:'Syne',sans-serif;font-weight:800;font-size:1.45rem;color:var(--accent);}
+.sb-right{display:flex;gap:14px;}
+.sb-stat .ssl{font-size:0.5rem;color:var(--muted2);text-transform:uppercase;letter-spacing:0.06em;}
+.sb-stat .ssv{font-family:'Syne',sans-serif;font-weight:600;font-size:0.76rem;color:var(--blue);}
+.sb-stat .ssv.ssv-ot{color:var(--accent2);}
+
+/* TOAST */
+.toast{position:fixed;bottom:calc(66px + env(safe-area-inset-bottom));right:14px;background:var(--surface2);border:1px solid var(--green);color:var(--green);font-family:'DM Mono',monospace;font-size:0.66rem;letter-spacing:0.06em;padding:8px 14px;border-radius:4px;z-index:999;opacity:0;transition:opacity 0.3s;pointer-events:none;max-width:260px;}
+.toast.show{opacity:1;}
+
+/* MODAL OVERLAY */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.68);z-index:200;display:flex;align-items:center;justify-content:center;padding:18px;}
+.modal-box{background:var(--surface);border:1px solid var(--border2);border-radius:12px;padding:22px;width:min(350px,94vw);box-shadow:0 24px 60px rgba(0,0,0,0.55);}
+.modal-box h3{font-family:'Syne',sans-serif;font-weight:700;font-size:0.98rem;color:var(--text);margin-bottom:7px;}
+.modal-box p{font-size:0.7rem;color:var(--muted);line-height:1.6;margin-bottom:16px;}
+.modal-btns{display:flex;gap:7px;justify-content:flex-end;}
+.modal-btns button{font-family:'DM Mono',monospace;font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;padding:7px 14px;border-radius:4px;cursor:pointer;border:1px solid;transition:all 0.15s;}
+.btn-cancel{background:none;border-color:var(--border);color:var(--muted);}
+.btn-cancel:hover{border-color:var(--accent);color:var(--accent);}
+.btn-confirm-red{background:rgba(240,96,96,0.1);border-color:rgba(240,96,96,0.35);color:var(--red);}
+.btn-confirm-red:hover{background:rgba(240,96,96,0.2);}
+.btn-confirm-green{background:rgba(93,220,138,0.1);border-color:rgba(93,220,138,0.35);color:var(--green);}
+.btn-confirm-green:hover{background:rgba(93,220,138,0.2);}
+
+/* TEMPLATES MODAL */
+.tpl-list{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;max-height:200px;overflow-y:auto;}
+.tpl-item{display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:8px 11px;cursor:pointer;transition:all 0.15s;}
+.tpl-item:hover{border-color:var(--accent);background:rgba(245,200,66,0.04);}
+.tpl-name{font-family:'Syne',sans-serif;font-weight:600;font-size:0.76rem;color:var(--text);flex:1;}
+.tpl-detail{font-size:0.6rem;color:var(--muted);}
+.tpl-del{background:none;border:none;color:var(--muted2);cursor:pointer;font-size:0.78rem;padding:1px 5px;transition:color 0.15s;}
+.tpl-del:hover{color:var(--red);}
+.tpl-divider{border:none;border-top:1px solid var(--border);margin:10px 0;}
+.tpl-form label{font-size:0.57rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:3px;}
+.tpl-form input{background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:'DM Mono',monospace;font-size:0.76rem;padding:6px 9px;border-radius:3px;outline:none;width:100%;margin-bottom:8px;}
+.tpl-form input:focus{border-color:var(--accent);}
+.tpl-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;}
+
+/* CALENDAR */
+.cal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.62);z-index:200;}
+.cal-modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:201;background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:16px;width:min(320px,92vw);box-shadow:0 20px 56px rgba(0,0,0,0.58);}
+.cal-header{display:flex;align-items:center;gap:6px;margin-bottom:11px;}
+.cal-month-label{font-family:'Syne',sans-serif;font-weight:700;font-size:0.9rem;color:var(--accent);flex:1;text-align:center;}
+.cal-nav{background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-size:0.96rem;width:26px;height:26px;border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s;flex-shrink:0;}
+.cal-nav:hover{border-color:var(--accent);color:var(--accent);}
+.cal-close{background:none;border:1px solid var(--border);color:var(--muted2);font-size:0.66rem;width:22px;height:22px;border-radius:4px;cursor:pointer;margin-left:2px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.cal-close:hover{border-color:var(--red);color:var(--red);}
+.cal-daynames{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;margin-bottom:2px;}
+.cal-daynames span{text-align:center;font-size:0.52rem;color:var(--muted2);text-transform:uppercase;letter-spacing:0.05em;padding:2px 0;}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;}
+.cal-day{padding:6px 1px;text-align:center;font-size:0.68rem;color:var(--muted);border-radius:3px;cursor:pointer;transition:all 0.12s;border:1px solid transparent;position:relative;}
+.cal-day:hover{background:rgba(245,200,66,0.1);color:var(--accent);}
+.cal-day.other-month{color:var(--muted2);opacity:0.32;}
+.cal-day.today-day{color:var(--accent);font-weight:700;}
+.cal-day.today-day::after{content:'';position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:var(--accent);}
+.cal-day.selected-week{background:rgba(245,200,66,0.11);border-color:rgba(245,200,66,0.22);color:var(--accent);}
+.cal-day.selected-week.week-start{border-radius:3px 0 0 3px;background:rgba(245,200,66,0.2);border-color:var(--accent);}
+.cal-day.selected-week.week-end{border-radius:0 3px 3px 0;}
+.cal-hint{text-align:center;font-size:0.54rem;color:var(--muted2);margin-top:9px;letter-spacing:0.06em;text-transform:uppercase;}
+
+/* INSTALL BANNER */
+.install-banner{position:fixed;bottom:0;left:0;right:0;background:var(--surface2);border-top:1px solid var(--border2);padding:10px 16px calc(10px + env(safe-area-inset-bottom));display:flex;align-items:center;justify-content:space-between;gap:8px;z-index:300;font-size:0.64rem;}
+.ib-text{color:var(--muted);line-height:1.5;}
+.ib-text strong{color:var(--accent);display:block;margin-bottom:1px;}
+.ib-dismiss{background:none;border:1px solid var(--border);color:var(--muted2);font-family:'DM Mono',monospace;font-size:0.56rem;padding:4px 8px;border-radius:2px;cursor:pointer;white-space:nowrap;flex-shrink:0;}
+.ib-icon{font-size:1.2rem;flex-shrink:0;}
+
+@media(max-width:600px){
+  header,.main,.week-nav{padding-left:13px;padding-right:13px;}
+  .employees-grid{grid-template-columns:1fr;}
+  .day-row,.day-col-header{grid-template-columns:64px 1fr 1fr 42px 40px 30px;gap:2px;padding-left:9px;padding-right:9px;}
+  .grand-amount{font-size:1.35rem;}
+  .summary-grid,.monthly-grid{grid-template-columns:1fr 1fr;}
+  .footer-btns{gap:4px;}
+}
+@media print{
+  .week-nav,.action-btn,.icon-btn,.add-emp-btn,.toggle-btn,.sticky-bar,.theme-btn,.install-banner,.tpl-quick{display:none!important;}
+  body{background:white;color:black;padding-bottom:0;}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <h1>PAYROLL</h1>
+    <div class="company">Double Sided ISCM LLC</div>
+  </div>
+  <div class="header-right">
+    <div class="week-info">
+      <div class="week-label">Pay Period</div>
+      <div id="week-range" onclick="toggleCal()" title="Tap to pick week">—</div>
+      <div class="payday-badge">⚡ Payday: Friday</div>
+    </div>
+    <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Light/Dark mode">🌙</button>
+  </div>
+</header>
+
+<div class="week-nav">
+  <button onclick="changeWeek(-1)">← Prev</button>
+  <button class="today-btn" onclick="goToday()">This Week</button>
+  <button onclick="changeWeek(1)">Next →</button>
+  <button class="cal-btn" onclick="toggleCal()">📅 Pick Week</button>
+  <span class="week-num" id="week-num"></span>
+</div>
+
+<!-- Calendar -->
+<div id="cal-picker" style="display:none;">
+  <div class="cal-overlay" onclick="closeCal()"></div>
+  <div class="cal-modal">
+    <div class="cal-header">
+      <button class="cal-nav" onclick="calPrevMonth()">‹</button>
+      <span class="cal-month-label" id="cal-month-label"></span>
+      <button class="cal-nav" onclick="calNextMonth()">›</button>
+      <button class="cal-close" onclick="closeCal()">✕</button>
+    </div>
+    <div class="cal-daynames"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div>
+    <div class="cal-grid" id="cal-grid"></div>
+    <div class="cal-hint">Tap any day to jump to that week</div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="employees-grid" id="emp-grid"></div>
+  <button class="add-emp-btn" onclick="addEmployee()">+ Add Employee</button>
+
+  <!-- Weekly Summary -->
+  <div class="summary-panel">
+    <div class="summary-header">
+      <div>
+        <div class="summary-title">Weekly Payroll Summary</div>
+        <div class="summary-subtitle" id="summary-date-label">—</div>
+      </div>
+      <div class="summary-actions">
+        <button class="action-btn btn-share" onclick="shareCSV()">↑ Share CSV</button>
+        <button class="action-btn btn-csv-all" onclick="exportCSV(true)">↓ All Weeks</button>
+        <button class="action-btn btn-print" onclick="window.print()">🖨 Print</button>
+      </div>
+    </div>
+    <div class="summary-grid" id="summary-grid"></div>
+    <div class="ot-note"><strong>Overtime:</strong> &gt;8hrs/day or &gt;40hrs/week billed at <strong>1.5×</strong>. Break minutes <strong>deducted</strong> before calculation.</div>
+    <div class="grand-total-row">
+      <div>
+        <div class="grand-label">Total Weekly Payroll<span id="emp-count-label"></span></div>
+      </div>
+      <div class="grand-meta">
+        <div class="grand-stat"><div class="gsl">Net Hours</div><div class="gsv" id="grand-hours">0.00</div></div>
+        <div class="grand-stat"><div class="gsl">Break</div><div class="gsv" id="grand-brk" style="color:var(--muted)">—</div></div>
+        <div class="grand-stat"><div class="gsl">OT Hours</div><div class="gsv" id="grand-ot" style="color:var(--accent2)">0.00</div></div>
+        <div class="grand-amount" id="grand-total">$0.00</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Monthly Overview -->
+  <div class="monthly-panel">
+    <div class="monthly-header">
+      <div class="monthly-title">📅 Monthly Overview</div>
+      <div class="monthly-nav">
+        <button onclick="monthlyPrev()">‹</button>
+        <span class="monthly-month-label" id="monthly-label">—</span>
+        <button onclick="monthlyNext()">›</button>
+      </div>
+    </div>
+    <div class="monthly-grid" id="monthly-grid"></div>
+    <div class="monthly-footer">
+      <div class="mf-label">Month Total Payroll</div>
+      <div class="mf-val" id="monthly-total">$0.00</div>
+    </div>
+  </div>
+</div>
+
+<!-- Sticky bar -->
+<div class="sticky-bar">
+  <div class="sb-left">
+    <div class="sb-label">This Week</div>
+    <div class="sb-total" id="sb-total">$0.00</div>
+  </div>
+  <div class="sb-right">
+    <div class="sb-stat"><div class="ssl">Net Hrs</div><div class="ssv" id="sb-hrs">0.00</div></div>
+    <div class="sb-stat"><div class="ssl">OT Hrs</div><div class="ssv ssv-ot" id="sb-ot">0.00</div></div>
+    <div class="sb-stat"><div class="ssl">Staff</div><div class="ssv" id="sb-emps">0</div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Confirm Modal -->
+<div class="modal-overlay" id="confirm-modal" style="display:none;">
+  <div class="modal-box">
+    <h3 id="confirm-title">Are you sure?</h3>
+    <p id="confirm-msg"></p>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeConfirm()">Cancel</button>
+      <button id="confirm-ok" onclick="confirmOk()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Shift Templates Modal -->
+<div class="modal-overlay" id="tpl-modal" style="display:none;">
+  <div class="modal-box">
+    <h3>⚡ Shift Templates</h3>
+    <div class="tpl-list" id="tpl-list"></div>
+    <hr class="tpl-divider">
+    <p style="font-size:0.68rem;color:var(--muted);margin-bottom:10px;">Save a new template:</p>
+    <div class="tpl-form">
+      <label>Template name</label>
+      <input type="text" id="tpl-name" placeholder="e.g. Morning Shift">
+      <div class="tpl-row">
+        <div><label>Clock In</label><input type="time" id="tpl-start"></div>
+        <div><label>Clock Out</label><input type="time" id="tpl-end"></div>
+        <div><label>Break (min)</label><input type="number" id="tpl-brk" min="0" step="5" placeholder="30"></div>
+      </div>
+    </div>
+    <div class="modal-btns" style="margin-top:13px;">
+      <button class="btn-cancel" onclick="closeTpl()">Close</button>
+      <button class="btn-confirm-green" onclick="saveTpl()">Save Template</button>
+    </div>
+  </div>
+</div>
+
+<!-- Install Banner -->
+<div class="install-banner" id="install-banner" style="display:none;">
+  <span class="ib-icon">📲</span>
+  <div class="ib-text">
+    <strong>Add to Home Screen</strong>
+    Tap <strong style="color:var(--blue)">Share ↑</strong> then <strong style="color:var(--blue)">"Add to Home Screen"</strong>
+  </div>
+  <button class="ib-dismiss" onclick="dismissBanner()">Got it</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════
+//  STATE & CONSTANTS
+// ═══════════════════════════════════════
+const DAYS        = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const DAYS_SHORT  = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+let weekOffset   = 0;
+let anchorMon    = null;
+let monthlyOff   = 0;
+
+let employees = JSON.parse(localStorage.getItem('pr2_emps') || 'null') || [
+  {id:1,name:'Employee 1',role:'Part-time',rate:18.00,color:0},
+  {id:2,name:'Employee 2',role:'Part-time',rate:17.50,color:1},
+  {id:3,name:'Employee 3',role:'Part-time',rate:16.00,color:2},
+  {id:4,name:'Employee 4',role:'Part-time',rate:15.00,color:3},
+];
+let weekData  = JSON.parse(localStorage.getItem('pr2_weeks') || '{}');
+let templates = JSON.parse(localStorage.getItem('pr2_tpls')  || '[]');
+
+function save(){
+  localStorage.setItem('pr2_emps',  JSON.stringify(employees));
+  localStorage.setItem('pr2_weeks', JSON.stringify(weekData));
+  localStorage.setItem('pr2_tpls',  JSON.stringify(templates));
+}
+
+// ═══════════════════════════════════════
+//  THEME
+// ═══════════════════════════════════════
+if(localStorage.getItem('pr2_theme')==='light') document.body.classList.add('light');
+function syncThemeBtn(){ document.getElementById('theme-btn').textContent = document.body.classList.contains('light')?'🌙':'☀️'; }
+syncThemeBtn();
+function toggleTheme(){
+  document.body.classList.toggle('light');
+  localStorage.setItem('pr2_theme', document.body.classList.contains('light')?'light':'dark');
+  syncThemeBtn();
+}
+
+// ═══════════════════════════════════════
+//  WEEK UTILITIES
+// ═══════════════════════════════════════
+function getMonFromAnchor(){
+  if(anchorMon) return new Date(anchorMon);
+  const n=new Date(), day=n.getDay();
+  const d=new Date(n); d.setDate(n.getDate()+(day===0?-6:1-day)+weekOffset*7); d.setHours(0,0,0,0); return d;
+}
+function getMon(){
+  return getMonFromAnchor();
+}
+function weekKey(){
+  return getMon().toISOString().slice(0,10);
+}
+function dayDates(){
+  const m=getMon();
+  return DAYS.map((_,i)=>{const d=new Date(m);d.setDate(m.getDate()+i);return d;});
+}
+function fmt(d){ return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
+function isToday(d){ return d.toDateString()===new Date().toDateString(); }
+function isoWeek(d){
+  const dt=new Date(d); dt.setHours(0,0,0,0); dt.setDate(dt.getDate()+3-(dt.getDay()+6)%7);
+  const w1=new Date(dt.getFullYear(),0,4);
+  return 1+Math.round(((dt-w1)/864e5-3+(w1.getDay()+6)%7)/7);
+}
+function mondayOf(d){
+  const r=new Date(d); r.setHours(0,0,0,0);
+  const day=r.getDay(); r.setDate(r.getDate()+(day===0?-6:1-day)); return r;
+}
+function updateWeekDisplay(){
+  const dd=dayDates();
+  document.getElementById('week-range').textContent=`${fmt(dd[0])} – ${fmt(dd[6])}`;
+  document.getElementById('week-num').textContent=`Week ${isoWeek(dd[0])}`;
+  document.getElementById('summary-date-label').textContent=`Pay period: ${fmt(dd[0])} – ${fmt(dd[4])}  ·  Payday: ${fmt(dd[4])}`;
+  document.getElementById('emp-count-label').textContent=`${employees.length} employee${employees.length!==1?'s':''} · Friday`;
+}
+function changeWeek(d){
+  const cur=getMonFromAnchor(); cur.setDate(cur.getDate()+d*7);
+  anchorMon=cur; weekOffset=0; render();
+}
+function goToday(){ anchorMon=null; weekOffset=0; render(); }
+
+// ═══════════════════════════════════════
+//  SWIPE TO CHANGE WEEK
+// ═══════════════════════════════════════
+let _sx=0,_sy=0;
+document.addEventListener('touchstart',e=>{_sx=e.touches[0].clientX;_sy=e.touches[0].clientY;},{passive:true});
+document.addEventListener('touchend',e=>{
+  const dx=e.changedTouches[0].clientX-_sx, dy=e.changedTouches[0].clientY-_sy;
+  if(Math.abs(dx)>65&&Math.abs(dx)>Math.abs(dy)*1.8){
+    if(e.target.closest('#cal-picker,.modal-overlay')) return;
+    changeWeek(dx<0?1:-1);
+  }
+},{passive:true});
+
+// ═══════════════════════════════════════
+//  CALENDAR PICKER
+// ═══════════════════════════════════════
+let calY,calM;
+function toggleCal(){
+  const el=document.getElementById('cal-picker');
+  if(el.style.display==='none'||!el.style.display){
+    const c=getMonFromAnchor(); calY=c.getFullYear(); calM=c.getMonth();
+    buildCal(); el.style.display='block';
+  } else closeCal();
+}
+function closeCal(){ document.getElementById('cal-picker').style.display='none'; }
+function calPrevMonth(){ calM--; if(calM<0){calM=11;calY--;} buildCal(); }
+function calNextMonth(){ calM++; if(calM>11){calM=0;calY++;} buildCal(); }
+function buildCal(){
+  document.getElementById('cal-month-label').textContent=`${MONTH_NAMES[calM]} ${calY}`;
+  const grid=document.getElementById('cal-grid'); grid.innerHTML='';
+  const today=new Date(); today.setHours(0,0,0,0);
+  const curMon=getMonFromAnchor();
+  const first=new Date(calY,calM,1), sd=first.getDay();
+  const gs=new Date(first); gs.setDate(first.getDate()-(sd===0?6:sd-1));
+  for(let i=0;i<42;i++){
+    const d=new Date(gs); d.setDate(gs.getDate()+i);
+    const mon=mondayOf(d), sun=new Date(mon); sun.setDate(mon.getDate()+6);
+    const isO=d.getMonth()!==calM, isT=d.toDateString()===today.toDateString();
+    const isSel=mon.toDateString()===curMon.toDateString();
+    const isS=d.toDateString()===mon.toDateString(), isE=d.toDateString()===sun.toDateString();
+    const el=document.createElement('div');
+    el.className='cal-day'+(isO?' other-month':'')+(isT?' today-day':'')+(isSel?' selected-week':'')+(isSel&&isS?' week-start':'')+(isSel&&isE?' week-end':'');
+    el.textContent=d.getDate();
+    el.addEventListener('click',()=>{anchorMon=mondayOf(d);weekOffset=0;render();closeCal();});
+    grid.appendChild(el);
+  }
+}
+
+// ═══════════════════════════════════════
+//  CALCULATIONS
+// ═══════════════════════════════════════
+function netHours(start,end,brkMins=0){
+  if(!start||!end) return 0;
+  const[sh,sm]=start.split(':').map(Number), [eh,em]=end.split(':').map(Number);
+  if([sh,sm,eh,em].some(isNaN)) return 0;
+  const net=(eh*60+em)-(sh*60+sm)-(parseFloat(brkMins)||0);
+  return net>0?Math.round(net/60*1000)/1000:0;
+}
+function calcWage(emp,wk){
+  const wd=weekData[wk]?.[emp.id]||{};
+  let reg=0,dayOT=0,brkH=0;
+  DAYS.forEach((_,di)=>{
+    const d=wd[di]; if(!d||!d.active) return;
+    const bm=parseFloat(d.breakMins)||0; brkH+=bm;
+    const h=netHours(d.start,d.end,bm); if(h<=0) return;
+    reg+=Math.min(h,8); dayOT+=Math.max(0,h-8);
+  });
+  const wkOT=Math.max(0,reg-40), fReg=Math.min(reg,40), fOT=dayOT+wkOT, rate=parseFloat(emp.rate)||0;
+  return{hours:fReg+fOT,reg:fReg,ot:fOT,brk:Math.round(brkH/60*100)/100,wage:fReg*rate+fOT*rate*1.5};
+}
+
+// ═══════════════════════════════════════
+//  DATA HELPERS
+// ═══════════════════════════════════════
+function ensureDay(empId,di){
+  const wk=weekKey();
+  weekData[wk]??={}; weekData[wk][empId]??={}; weekData[wk][empId][di]??={active:false};
+  return weekData[wk][empId][di];
+}
+function getNotes(empId){ return weekData[weekKey()]?._notes?.[empId]||''; }
+function setNotes(empId,val){
+  const wk=weekKey(); weekData[wk]??={}; weekData[wk]._notes??={};
+  weekData[wk]._notes[empId]=val; save(); renderSummary(); updateStickyBar();
+}
+function toggleDay(empId,di){
+  const d=ensureDay(empId,di); d.active=!d.active;
+  save(); renderCard(empId); renderSummary(); updateStickyBar();
+}
+function setField(empId,di,field,val){
+  ensureDay(empId,di)[field]=val;
+  save(); refreshDayRow(empId,di); renderSummary(); updateStickyBar();
+}
+function updateEmp(id,field,val){
+  const e=employees.find(e=>e.id===id); if(!e) return;
+  e[field]=val; save();
+  if(field==='name'){const av=document.querySelector(`#card-${id} .emp-avatar`);if(av)av.textContent=val.charAt(0).toUpperCase();}
+  renderSummary(); updateStickyBar();
+  if(field==='rate') refreshFooter(id);
+}
+
+// ═══════════════════════════════════════
+//  CONFIRM MODAL
+// ═══════════════════════════════════════
+let _cb=null;
+function showConfirm(title,msg,btnLabel,btnClass,cb){
+  document.getElementById('confirm-title').textContent=title;
+  document.getElementById('confirm-msg').textContent=msg;
+  const ok=document.getElementById('confirm-ok');
+  ok.textContent=btnLabel; ok.className=btnClass;
+  _cb=cb; document.getElementById('confirm-modal').style.display='flex';
+}
+function closeConfirm(){ document.getElementById('confirm-modal').style.display='none'; _cb=null; }
+function confirmOk(){ closeConfirm(); if(_cb)_cb(); }
+
+// ═══════════════════════════════════════
+//  EMPLOYEE ACTIONS
+// ═══════════════════════════════════════
+function clearEmp(id){
+  showConfirm('Clear This Week?','All entries for this employee this week will be removed.','Clear','btn-confirm-red',()=>{
+    const wk=weekKey();
+    if(weekData[wk]){delete weekData[wk][id];if(weekData[wk]._notes)delete weekData[wk]._notes[id];}
+    save(); renderCard(id); renderSummary(); updateStickyBar();
+  });
+}
+function deleteEmp(id){
+  const emp=employees.find(e=>e.id===id);
+  showConfirm('Remove Employee?',`"${emp?.name}" will be permanently removed from all weeks.`,'Remove','btn-confirm-red',()=>{
+    employees=employees.filter(e=>e.id!==id);
+    save(); renderGrid(); renderSummary(); updateStickyBar();
+  });
+}
+function addEmployee(){
+  const used=employees.map(e=>e.color);
+  const c=[0,1,2,3,4,5].find(x=>!used.includes(x))??employees.length%6;
+  employees.push({id:Date.now(),name:`Employee ${employees.length+1}`,role:'Part-time',rate:15.00,color:c});
+  save(); renderGrid(); renderSummary(); updateStickyBar();
+}
+
+// ═══════════════════════════════════════
+//  COPY LAST WEEK
+// ═══════════════════════════════════════
+function copyLastWeek(empId){
+  const prevMon=new Date(getMonFromAnchor()); prevMon.setDate(prevMon.getDate()-7);
+  const prevKey=prevMon.toISOString().slice(0,10);
+  const prevData=weekData[prevKey]?.[empId];
+  if(!prevData||!Object.keys(prevData).some(k=>prevData[k]?.active)){
+    showToast('No worked days found in previous week.'); return;
+  }
+  showConfirm('Copy Last Week?','This will overwrite any hours already entered for this employee this week.','Copy','btn-confirm-green',()=>{
+    const wk=weekKey(); weekData[wk]??={}; weekData[wk][empId]=JSON.parse(JSON.stringify(prevData));
+    save(); renderCard(empId); renderSummary(); updateStickyBar(); showToast('✓ Previous week copied!');
+  });
+}
+
+// ═══════════════════════════════════════
+//  SHIFT TEMPLATES
+// ═══════════════════════════════════════
+let _tplTarget=null;
+function openTpl(empId,di){
+  _tplTarget=(empId!=null)?{empId,di}:null;
+  renderTplList();
+  document.getElementById('tpl-modal').style.display='flex';
+}
+function closeTpl(){ document.getElementById('tpl-modal').style.display='none'; _tplTarget=null; }
+function renderTplList(){
+  const list=document.getElementById('tpl-list'); list.innerHTML='';
+  if(!templates.length){
+    list.innerHTML=`<div style="font-size:0.66rem;color:var(--muted2);padding:6px 0;">No templates yet. Create one below.</div>`; return;
+  }
+  templates.forEach(t=>{
+    const item=document.createElement('div'); item.className='tpl-item';
+    item.innerHTML=`<span class="tpl-name">${t.name}</span><span class="tpl-detail">${t.start}–${t.end}${t.breakMins?', '+t.breakMins+'min':''}</span><button class="tpl-del" onclick="deleteTpl(${t.id},event)">✕</button>`;
+    if(_tplTarget&&_tplTarget.di!=null){
+      item.addEventListener('click',e=>{
+        if(e.target.classList.contains('tpl-del'))return;
+        applyTpl(t,_tplTarget.empId,_tplTarget.di); closeTpl();
+      });
+    } else {
+      item.style.cursor='default';
+    }
+    list.appendChild(item);
+  });
+}
+function applyTpl(t,empId,di){
+  const d=ensureDay(empId,di);
+  d.active=true; d.start=t.start; d.end=t.end; d.breakMins=t.breakMins||'';
+  save(); renderCard(empId); renderSummary(); updateStickyBar();
+  showToast(`✓ Applied: ${t.name}`);
+}
+function saveTpl(){
+  const name=document.getElementById('tpl-name').value.trim();
+  const start=document.getElementById('tpl-start').value;
+  const end=document.getElementById('tpl-end').value;
+  const brk=document.getElementById('tpl-brk').value;
+  if(!name||!start||!end){showToast('Please fill in name, start and end time.');return;}
+  templates.push({id:Date.now(),name,start,end,breakMins:brk});
+  save();
+  ['tpl-name','tpl-start','tpl-end','tpl-brk'].forEach(id=>document.getElementById(id).value='');
+  renderTplList(); showToast('✓ Template saved!');
+}
+function deleteTpl(id,e){
+  e.stopPropagation(); templates=templates.filter(t=>t.id!==id); save(); renderTplList();
+}
+
+// ═══════════════════════════════════════
+//  PARTIAL RE-RENDERS
+// ═══════════════════════════════════════
+function refreshDayRow(empId,di){
+  const wk=weekKey(), d=weekData[wk]?.[empId]?.[di]||{};
+  const h=netHours(d.start,d.end,d.breakMins);
+  const el=document.getElementById(`hrs-${empId}-${di}`);
+  if(el){el.textContent=h>0?h.toFixed(2)+'h':'—';el.className='day-hours'+(h===0?' zero':h>8?' ot':'');}
+  refreshFooter(empId);
+}
+function refreshFooter(empId){
+  const emp=employees.find(e=>e.id===empId); if(!emp) return;
+  const r=calcWage(emp,weekKey());
+  const s=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  s(`fh-${empId}`,r.hours.toFixed(2)+'h');
+  s(`fb-${empId}`,r.brk>0?r.brk.toFixed(2)+'h':'—');
+  s(`fo-${empId}`,r.ot>0?r.ot.toFixed(2)+'h OT':'—');
+  s(`fw-${empId}`,'$'+r.wage.toFixed(2));
+  const badge=document.getElementById(`ot-badge-${empId}`);
+  if(badge) badge.className='ot-badge'+(r.ot>0?' show':'');
+  const card=document.getElementById(`card-${empId}`);
+  if(card) card.classList.toggle('ot-warning',r.ot>0);
+}
+
+// ═══════════════════════════════════════
+//  BUILD DAY ROW
+// ═══════════════════════════════════════
+function buildRow(emp,di,dates){
+  const wk=weekKey(), dd=weekData[wk]?.[emp.id]?.[di]||{active:false};
+  const d=dates[di], tod=isToday(d);
+  const h=netHours(dd.start,dd.end,dd.breakMins);
+  const row=document.createElement('div');
+  row.className='day-row'+(tod?' today':'');
+  row.innerHTML=`
+    <div class="day-name">
+      <div class="day-name-top"><span class="today-dot"></span>${DAYS_SHORT[di]}</div>
+      <div class="day-date-sub">${fmt(d)}</div>
+    </div>
+    <div class="time-input-wrap">
+      <span class="time-lbl">in</span>
+      <input type="time" class="time-input" value="${dd.start||''}" ${!dd.active?'disabled':''}
+        onchange="setField(${emp.id},${di},'start',this.value)">
+    </div>
+    <div class="time-input-wrap">
+      <span class="time-lbl">out</span>
+      <input type="time" class="time-input" value="${dd.end||''}" ${!dd.active?'disabled':''}
+        onchange="setField(${emp.id},${di},'end',this.value)">
+    </div>
+    <input type="number" class="break-input" min="0" max="480" step="5" placeholder="min"
+      value="${dd.breakMins||''}" ${!dd.active?'disabled':''}
+      onchange="setField(${emp.id},${di},'breakMins',this.value)">
+    <div class="day-hours${h===0?' zero':h>8?' ot':''}" id="hrs-${emp.id}-${di}">${h>0?h.toFixed(2)+'h':'—'}</div>
+    <div class="toggle-wrap">
+      <div class="toggle-btn${dd.active?' on':''}" onclick="toggleDay(${emp.id},${di})"></div>
+      ${dd.active?`<span class="tpl-quick" onclick="openTpl(${emp.id},${di})" title="Apply template">⚡</span>`:''}
+    </div>`;
+  return row;
+}
+
+// ═══════════════════════════════════════
+//  RENDER CARD
+// ═══════════════════════════════════════
+function renderCard(empId){
+  const emp=employees.find(e=>e.id===empId); if(!emp) return;
+  const card=document.getElementById(`card-${empId}`);
+  if(!card){renderGrid();return;}
+  const dates=dayDates();
+  const tbody=card.querySelector('.days-table');
+  if(tbody){tbody.innerHTML='';DAYS.forEach((_,di)=>tbody.appendChild(buildRow(emp,di,dates)));}
+  const ni=card.querySelector('.notes-input');
+  if(ni) ni.value=getNotes(empId);
+  refreshFooter(empId);
+}
+
+// ═══════════════════════════════════════
+//  RENDER GRID
+// ═══════════════════════════════════════
+function renderGrid(){
+  const grid=document.getElementById('emp-grid'); grid.innerHTML='';
+  const dates=dayDates();
+  employees.forEach(emp=>{
+    const r=calcWage(emp,weekKey());
+    const card=document.createElement('div');
+    card.className='emp-card'+(r.ot>0?' ot-warning':''); card.id=`card-${emp.id}`;
+
+    const hdr=document.createElement('div'); hdr.className='emp-header';
+    hdr.innerHTML=`
+      <div class="emp-avatar color-${emp.color}">${emp.name.charAt(0).toUpperCase()}</div>
+      <div class="emp-info">
+        <input class="emp-name-input" type="text" value="${emp.name}" onchange="updateEmp(${emp.id},'name',this.value)">
+        <input class="emp-role-input" type="text" value="${emp.role}" placeholder="Role" onchange="updateEmp(${emp.id},'role',this.value)">
+      </div>
+      <div class="emp-header-right">
+        <span class="ot-badge${r.ot>0?' show':''}" id="ot-badge-${emp.id}">⚠ OT</span>
+        <div class="emp-rate-wrap">
+          <span class="rate-label">$/hr</span><span class="rate-prefix">$</span>
+          <input class="emp-rate-input" type="number" min="0" step="0.5" value="${emp.rate}"
+            onchange="updateEmp(${emp.id},'rate',parseFloat(this.value)||0)">
+        </div>
+      </div>`;
+    card.appendChild(hdr);
+
+    const ch=document.createElement('div'); ch.className='day-col-header';
+    ch.innerHTML=`<div class="col-lbl">Day</div><div class="col-lbl">In</div><div class="col-lbl">Out</div><div class="col-lbl">Brk</div><div class="col-lbl">Hrs</div><div class="col-lbl">On</div>`;
+    card.appendChild(ch);
+
+    const tb=document.createElement('div'); tb.className='days-table';
+    DAYS.forEach((_,di)=>tb.appendChild(buildRow(emp,di,dates)));
+    card.appendChild(tb);
+
+    const ns=document.createElement('div'); ns.className='notes-section';
+    ns.innerHTML=`<div class="notes-header"><span style="font-size:0.76rem">📝</span><span class="notes-label">Week Notes</span></div>
+      <textarea class="notes-input" rows="2" placeholder="Sick day, bonus, deductions…" oninput="setNotes(${emp.id},this.value)">${getNotes(emp.id)}</textarea>`;
+    card.appendChild(ns);
+
+    const ft=document.createElement('div'); ft.className='emp-footer';
+    ft.innerHTML=`
+      <div class="emp-stats">
+        <div class="stat"><span class="stat-label">Net Hrs</span><span class="stat-val hours" id="fh-${emp.id}">${r.hours.toFixed(2)}h</span></div>
+        <div class="stat"><span class="stat-label">Break</span><span class="stat-val brk" id="fb-${emp.id}">${r.brk>0?r.brk.toFixed(2)+'h':'—'}</span></div>
+        <div class="stat"><span class="stat-label">OT</span><span class="stat-val ot" id="fo-${emp.id}">${r.ot>0?r.ot.toFixed(2)+'h OT':'—'}</span></div>
+        <div class="stat"><span class="stat-label">This Week</span><span class="stat-val wage" id="fw-${emp.id}">$${r.wage.toFixed(2)}</span></div>
+      </div>
+      <div class="footer-btns">
+        <button class="icon-btn copy-btn" onclick="copyLastWeek(${emp.id})">↩ Copy</button>
+        <button class="icon-btn" onclick="openTpl(${emp.id},null)">⚡ Tpl</button>
+        <button class="icon-btn" onclick="clearEmp(${emp.id})">Clear</button>
+        <button class="icon-btn danger" onclick="deleteEmp(${emp.id})">✕ Del</button>
+      </div>`;
+    card.appendChild(ft);
+    grid.appendChild(card);
+  });
+}
+
+// ═══════════════════════════════════════
+//  RENDER SUMMARY
+// ═══════════════════════════════════════
+function renderSummary(){
+  const wk=weekKey(), grid=document.getElementById('summary-grid'); grid.innerHTML='';
+  let gH=0,gO=0,gW=0,gB=0;
+  const cols=['accent','blue','green','red','purple'];
+  employees.forEach(emp=>{
+    const r=calcWage(emp,wk), notes=weekData[wk]?._notes?.[emp.id]||'';
+    gH+=r.hours; gO+=r.ot; gW+=r.wage; gB+=r.brk;
+    const cell=document.createElement('div'); cell.className='summary-emp';
+    cell.innerHTML=`
+      <div class="sum-name" style="color:var(--${cols[emp.color%cols.length]})">${emp.name}</div>
+      <div class="sum-row"><span class="lbl">Role</span><span class="val">${emp.role}</span></div>
+      <div class="sum-row"><span class="lbl">Rate</span><span class="val">$${parseFloat(emp.rate).toFixed(2)}/hr</span></div>
+      <div class="sum-row"><span class="lbl">Reg Hrs</span><span class="val">${r.reg.toFixed(2)}h</span></div>
+      <div class="sum-row"><span class="lbl">Break</span><span class="val" style="color:var(--muted)">${r.brk>0?r.brk.toFixed(2)+'h':'—'}</span></div>
+      <div class="sum-row"><span class="lbl">OT (1.5×)</span><span class="val" style="color:var(--accent2)">${r.ot>0?r.ot.toFixed(2)+'h':'—'}</span></div>
+      <div class="sum-row total-row"><span class="lbl">Total Pay</span><span class="val">$${r.wage.toFixed(2)}</span></div>
+      ${notes?`<div class="sum-notes">${notes}</div>`:''}`;
+    grid.appendChild(cell);
+  });
+  const s=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  s('grand-hours',gH.toFixed(2)); s('grand-ot',gO>0?gO.toFixed(2):'0.00');
+  s('grand-brk',gB>0?gB.toFixed(2)+'h':'—'); s('grand-total','$'+gW.toFixed(2));
+}
+
+// ═══════════════════════════════════════
+//  STICKY BAR
+// ═══════════════════════════════════════
+function updateStickyBar(){
+  const wk=weekKey(); let gH=0,gO=0,gW=0;
+  employees.forEach(emp=>{const r=calcWage(emp,wk);gH+=r.hours;gO+=r.ot;gW+=r.wage;});
+  const s=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  s('sb-total','$'+gW.toFixed(2)); s('sb-hrs',gH.toFixed(2));
+  s('sb-ot',gO>0?gO.toFixed(2):'0.00'); s('sb-emps',employees.length);
+}
+
+// ═══════════════════════════════════════
+//  MONTHLY OVERVIEW
+// ═══════════════════════════════════════
+function renderMonthly(){
+  const now=new Date(), td=new Date(now.getFullYear(),now.getMonth()+monthlyOff,1);
+  const yr=td.getFullYear(), mo=td.getMonth();
+  document.getElementById('monthly-label').textContent=`${MONTH_NAMES[mo]} ${yr}`;
+  const grid=document.getElementById('monthly-grid'); grid.innerHTML='';
+  // Get all weeks that overlap with this month
+  const first=new Date(yr,mo,1), last=new Date(yr,mo+1,0);
+  const cur=mondayOf(first); let monthTotal=0;
+  const curKey=weekKey();
+  while(cur<=last){
+    const key=cur.toISOString().slice(0,10);
+    const sun=new Date(cur); sun.setDate(cur.getDate()+6);
+    let wT=0,wH=0;
+    employees.forEach(emp=>{const r=calcWage(emp,key);wT+=r.wage;wH+=r.hours;});
+    monthTotal+=wT;
+    const cell=document.createElement('div');
+    cell.className='monthly-week'+(key===curKey?' active-week':'');
+    const monCopy=new Date(cur);
+    cell.innerHTML=`<div class="mw-range">${fmt(cur)} – ${fmt(sun)}</div><div class="mw-total${wT===0?' mw-empty':''}">${wT>0?'$'+wT.toFixed(2):'—'}</div><div class="mw-hrs">${wH>0?wH.toFixed(1)+'h total':''}</div>`;
+    cell.addEventListener('click',()=>{anchorMon=new Date(monCopy);weekOffset=0;render();showToast(`Jumped to ${fmt(monCopy)}`);});
+    grid.appendChild(cell);
+    cur.setDate(cur.getDate()+7);
+  }
+  document.getElementById('monthly-total').textContent=monthTotal>0?'$'+monthTotal.toFixed(2):'$0.00';
+}
+function monthlyPrev(){ monthlyOff--; renderMonthly(); }
+function monthlyNext(){ monthlyOff++; renderMonthly(); }
+
+// ═══════════════════════════════════════
+//  CSV / SHARE
+// ═══════════════════════════════════════
+function esc(v){const s=String(v??'');return(s.includes(',')||s.includes('"')||s.includes('\n'))?`"${s.replace(/"/g,'""')}"`  :s;}
+function buildCSV(allWeeks=false){
+  const keys=allWeeks?Object.keys(weekData).filter(k=>k.match(/^\d{4}-\d{2}-\d{2}$/)).sort():[weekKey()];
+  if(!keys.length) return null;
+  const rows=[];
+  rows.push(esc('Double Sided ISCM LLC — Payroll Export'));
+  rows.push(esc(`Generated: ${new Date().toLocaleString()}`));
+  rows.push('');
+  rows.push(['Week Starting','Pay Date','Employee','Role','$/hr','Day','Date','In','Out','Brk(min)','Net Hrs','OT Hrs','Daily Pay','Wk Reg Hrs','Wk OT Hrs','Wk Total Pay','Notes'].map(esc).join(','));
+  keys.forEach(wk=>{
+    const mon=new Date(wk+'T00:00:00'), fri=new Date(mon); fri.setDate(mon.getDate()+4);
+    const monS=mon.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    const friS=fri.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    employees.forEach(emp=>{
+      const wRes=calcWage(emp,wk), notes=weekData[wk]?._notes?.[emp.id]||'';
+      let wrote=false;
+      DAYS.forEach((day,di)=>{
+        const dd=weekData[wk]?.[emp.id]?.[di]||{}; if(!dd.active) return;
+        const date=new Date(mon); date.setDate(mon.getDate()+di);
+        const dateS=date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+        const bm=parseFloat(dd.breakMins)||0, h=netHours(dd.start,dd.end,bm);
+        const dOT=Math.max(0,h-8), dReg=Math.min(h,8), rate=parseFloat(emp.rate)||0;
+        rows.push([monS,friS,emp.name,emp.role,emp.rate,day,dateS,dd.start||'',dd.end||'',bm,h.toFixed(3),dOT.toFixed(3),(dReg*rate+dOT*rate*1.5).toFixed(2),!wrote?wRes.reg.toFixed(2):'',!wrote?wRes.ot.toFixed(2):'',!wrote?wRes.wage.toFixed(2):'',!wrote?notes:''].map(esc).join(','));
+        wrote=true;
+      });
+      if(!wrote&&notes) rows.push([monS,friS,emp.name,emp.role,emp.rate,'—','—','—','—','0','0','0','0','0','0','0',notes].map(esc).join(','));
+    });
+  });
+  rows.push(''); rows.push([esc('── WEEKLY TOTALS ──')]);
+  rows.push(['Week','Pay Date','Employee','Net Hrs','OT Hrs','Total Pay','Notes'].map(esc).join(','));
+  keys.forEach(wk=>{
+    const mon=new Date(wk+'T00:00:00'), fri=new Date(mon); fri.setDate(mon.getDate()+4);
+    const monS=mon.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    const friS=fri.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    let gW=0;
+    employees.forEach(emp=>{const r=calcWage(emp,wk);gW+=r.wage;const notes=weekData[wk]?._notes?.[emp.id]||'';rows.push([monS,emp.name,emp.name,r.hours.toFixed(2),r.ot.toFixed(2),r.wage.toFixed(2),notes].map(esc).join(','));});
+    rows.push([friS,'TOTAL PAYROLL','','','','$'+gW.toFixed(2),''].map(esc).join(','));
+    rows.push('');
+  });
+  return rows.join('\n');
+}
+function exportCSV(allWeeks=false){
+  const csv=buildCSV(allWeeks); if(!csv){showToast('No data to export yet.');return;}
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download=allWeeks?`payroll_ALL_${new Date().toISOString().slice(0,10)}.csv`:`payroll_${weekKey()}.csv`;
+  a.click(); URL.revokeObjectURL(url); showToast(`✓ Downloaded: ${a.download}`);
+}
+async function shareCSV(){
+  const csv=buildCSV(false); if(!csv){showToast('No data to export yet.');return;}
+  const filename=`payroll_${weekKey()}.csv`;
+  const file=new File([csv],filename,{type:'text/csv'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file],title:'Payroll CSV',text:`Double Sided ISCM LLC · Week of ${weekKey()}`});return;}
+    catch(e){if(e.name==='AbortError')return;}
+  }
+  exportCSV(false);
+}
+
+// ═══════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════
+function showToast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3200);
+}
+
+// ═══════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════
+function render(){
+  updateWeekDisplay(); renderGrid(); renderSummary(); renderMonthly(); updateStickyBar();
+}
+render();
+
+// iOS install banner
+(function(){
+  const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  if(isIOS&&!navigator.standalone&&!localStorage.getItem('ath_dismissed')){
+    setTimeout(()=>{const b=document.getElementById('install-banner');if(b)b.style.display='flex';},1800);
+  }
+})();
+function dismissBanner(){localStorage.setItem('ath_dismissed','1');document.getElementById('install-banner').style.display='none';}
+
+// Service worker
+if('serviceWorker' in navigator){
+  const sw=`const C='pr-v2';self.addEventListener('install',e=>{self.skipWaiting();});self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==C).map(x=>caches.delete(x)))));self.clients.claim();});self.addEventListener('fetch',e=>{if(e.request.url.includes('fonts.g'))e.respondWith(caches.open(C).then(c=>c.match(e.request).then(r=>r||fetch(e.request).then(res=>{c.put(e.request,res.clone());return res;}))));});`;
+  navigator.serviceWorker.register(URL.createObjectURL(new Blob([sw],{type:'application/javascript'}))).catch(()=>{});
+}
+</script>
+</body>
+</html>
