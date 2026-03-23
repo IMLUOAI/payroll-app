@@ -211,7 +211,8 @@ body.light .sticky-bar{background:rgba(244,242,237,0.97);}
 .toast.show{opacity:1;}
 
 /* MODAL OVERLAY */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.68);z-index:200;display:flex;align-items:center;justify-content:center;padding:18px;}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.68);z-index:200;display:none;align-items:center;justify-content:center;padding:18px;}
+.modal-overlay.open{display:flex;}
 .modal-box{background:var(--surface);border:1px solid var(--border2);border-radius:12px;padding:22px;width:min(350px,94vw);box-shadow:0 24px 60px rgba(0,0,0,0.55);}
 .modal-box h3{font-family:'Syne',sans-serif;font-weight:700;font-size:0.98rem;color:var(--text);margin-bottom:7px;}
 .modal-box p{font-size:0.7rem;color:var(--muted);line-height:1.6;margin-bottom:16px;}
@@ -422,7 +423,7 @@ body.light .sticky-bar{background:rgba(244,242,237,0.97);}
 <div class="toast" id="toast"></div>
 
 <!-- Confirm Modal -->
-<div class="modal-overlay" id="confirm-modal" style="display:none;">
+<div class="modal-overlay" id="confirm-modal">
   <div class="modal-box">
     <h3 id="confirm-title">Are you sure?</h3>
     <p id="confirm-msg"></p>
@@ -434,7 +435,7 @@ body.light .sticky-bar{background:rgba(244,242,237,0.97);}
 </div>
 
 <!-- Shift Templates Modal -->
-<div class="modal-overlay" id="tpl-modal" style="display:none;">
+<div class="modal-overlay" id="tpl-modal">
   <div class="modal-box">
     <h3>⚡ Shift Templates</h3>
     <div class="tpl-list" id="tpl-list"></div>
@@ -457,7 +458,7 @@ body.light .sticky-bar{background:rgba(244,242,237,0.97);}
 </div>
 
 <!-- Settings / OneDrive Modal -->
-<div class="modal-overlay" id="settings-modal" style="display:none;">
+<div class="modal-overlay" id="settings-modal">
   <div class="modal-box settings-modal">
     <h3>⚙️ Settings & OneDrive</h3>
 
@@ -698,9 +699,9 @@ function showConfirm(title,msg,btnLabel,btnClass,cb){
   document.getElementById('confirm-msg').textContent=msg;
   const ok=document.getElementById('confirm-ok');
   ok.textContent=btnLabel; ok.className=btnClass;
-  _cb=cb; document.getElementById('confirm-modal').style.display='flex';
+  _cb=cb; document.getElementById('confirm-modal').classList.add('open');
 }
-function closeConfirm(){ document.getElementById('confirm-modal').style.display='none'; _cb=null; }
+function closeConfirm(){ document.getElementById('confirm-modal').classList.remove('open'); _cb=null; }
 function confirmOk(){ closeConfirm(); if(_cb)_cb(); }
 
 // ═══════════════════════════════════════
@@ -750,9 +751,9 @@ let _tplTarget=null;
 function openTpl(empId,di){
   _tplTarget=(empId!=null)?{empId,di}:null;
   renderTplList();
-  document.getElementById('tpl-modal').style.display='flex';
+  document.getElementById('tpl-modal').classList.add('open');
 }
-function closeTpl(){ document.getElementById('tpl-modal').style.display='none'; _tplTarget=null; }
+function closeTpl(){ document.getElementById('tpl-modal').classList.remove('open'); _tplTarget=null; }
 function renderTplList(){
   const list=document.getElementById('tpl-list'); list.innerHTML='';
   if(!templates.length){
@@ -1079,13 +1080,12 @@ render();
 //  SETTINGS
 // ═══════════════════════════════════════
 function openSettings(){
-  // Load saved values
   document.getElementById('s-client-id').value = localStorage.getItem('pr2_client_id')||'';
   document.getElementById('s-tenant-id').value  = localStorage.getItem('pr2_tenant_id')||'';
   updateOdStatusUI();
-  document.getElementById('settings-modal').style.display='flex';
+  document.getElementById('settings-modal').classList.add('open');
 }
-function closeSettings(){ document.getElementById('settings-modal').style.display='none'; }
+function closeSettings(){ document.getElementById('settings-modal').classList.remove('open'); }
 function saveSettings(){
   localStorage.setItem('pr2_client_id', document.getElementById('s-client-id').value.trim());
   localStorage.setItem('pr2_tenant_id',  document.getElementById('s-tenant-id').value.trim());
