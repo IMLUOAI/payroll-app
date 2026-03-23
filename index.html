@@ -12,12 +12,24 @@
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22Weekly%20Wage%20Calculator%22%2C%22short_name%22%3A%22Payroll%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230f0e0c%22%2C%22theme_color%22%3A%22%230f0e0c%22%7D">
 <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' fill='%230f0e0c' rx='80'/><text x='256' y='340' text-anchor='middle' font-size='280' fill='%23f5c842'>$</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
-<!-- MSAL v2 — official Microsoft CDN (v3 dropped CDN support entirely) -->
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<!-- MSAL v2 — primary + fallback CDN loaded properly without document.write -->
 <script>
-  if(typeof msal === 'undefined'){
-    document.write('<scr'+'ipt src="https://alcdn.msftauth.net/browser/2.38.3/js/msal-browser.min.js"></scr'+'ipt>');
+(function(){
+  function loadScript(src, cb){
+    var s = document.createElement('script');
+    s.src = src; s.onload = cb;
+    s.onerror = function(){
+      // Primary failed — try Microsoft's secondary CDN
+      var s2 = document.createElement('script');
+      s2.src = 'https://alcdn.msftauth.net/browser/2.38.3/js/msal-browser.min.js';
+      s2.onload = cb;
+      s2.onerror = function(){ console.error('MSAL failed to load from both CDNs.'); };
+      document.head.appendChild(s2);
+    };
+    document.head.appendChild(s);
   }
+  loadScript('https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js', function(){});
+})();
 </script>
 <style>
 :root {
@@ -1132,13 +1144,24 @@ const OD_SCOPES = ['Files.ReadWrite', 'User.Read'];
 
 let _msalInstance = null;
 
-function getMsal(){
+// Wait up to 8s for window.msal to become available (async script load)
+function waitForMsal(timeout=8000){
+  return new Promise((resolve, reject)=>{
+    if(typeof msal !== 'undefined'){ resolve(); return; }
+    const start = Date.now();
+    const check = setInterval(()=>{
+      if(typeof msal !== 'undefined'){ clearInterval(check); resolve(); }
+      else if(Date.now()-start > timeout){ clearInterval(check); reject(new Error('Auth library failed to load. Check internet connection and reload.')); }
+    }, 100);
+  });
+}
+
+async function getMsal(){
   const clientId = localStorage.getItem('pr2_client_id')||'';
   const tenantId = localStorage.getItem('pr2_tenant_id')||'';
   if(!clientId || !tenantId)
     throw new Error('Paste your Client ID and Tenant ID in ⚙️ Settings first.');
-  if(typeof msal === 'undefined')
-    throw new Error('Auth library not loaded — check internet connection and reload page.');
+  await waitForMsal();
   if(!_msalInstance){
     _msalInstance = new msal.PublicClientApplication({
       auth:{
@@ -1158,7 +1181,7 @@ async function odSignIn(){
   btn.textContent = '⏳ Connecting...';
   btn.disabled = true;
   try{
-    const ms   = getMsal();
+    const ms   = await getMsal();
     const resp = await ms.loginPopup({ scopes: OD_SCOPES, prompt: 'select_account' });
     localStorage.setItem('pr2_od_account', JSON.stringify({
       name:          resp.account.name,
@@ -1189,7 +1212,7 @@ function odSignOut(){
 async function getOdToken(){
   const acctData = localStorage.getItem('pr2_od_account');
   if(!acctData) throw new Error('Not signed in. Open ⚙️ Settings and sign in with Microsoft.');
-  const ms       = getMsal();
+  const ms       = await getMsal();
   const acctInfo = JSON.parse(acctData);
   const accounts = ms.getAllAccounts();
   const account  = accounts.find(a => a.homeAccountId === acctInfo.homeAccountId) || accounts[0];
