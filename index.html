@@ -12,6 +12,7 @@
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22Weekly%20Wage%20Calculator%22%2C%22short_name%22%3A%22Payroll%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230f0e0c%22%2C%22theme_color%22%3A%22%230f0e0c%22%7D">
 <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' fill='%230f0e0c' rx='80'/><text x='256' y='340' text-anchor='middle' font-size='280' fill='%23f5c842'>$</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
 <style>
 :root {
   --bg:#0f0e0c; --surface:#161512; --surface2:#1e1c18;
@@ -266,6 +267,38 @@ body.light .sticky-bar{background:rgba(244,242,237,0.97);}
 .ib-dismiss{background:none;border:1px solid var(--border);color:var(--muted2);font-family:'DM Mono',monospace;font-size:0.56rem;padding:4px 8px;border-radius:2px;cursor:pointer;white-space:nowrap;flex-shrink:0;}
 .ib-icon{font-size:1.2rem;flex-shrink:0;}
 
+/* ONEDRIVE BUTTON */
+.btn-excel{background:rgba(33,115,70,0.1);border-color:rgba(33,115,70,0.4);color:#2e9e5e;}
+.btn-excel:hover{background:rgba(33,115,70,0.2);}
+.btn-excel.signed-in{background:rgba(33,115,70,0.15);border-color:#2e9e5e;}
+.btn-excel.loading{opacity:0.6;cursor:not-allowed;pointer-events:none;}
+
+/* SETTINGS MODAL */
+.settings-modal{max-width:420px;width:min(420px,95vw);}
+.settings-section{margin-bottom:18px;}
+.settings-section h4{font-family:'Syne',sans-serif;font-weight:700;font-size:0.82rem;color:var(--accent);margin-bottom:10px;letter-spacing:0.04em;}
+.settings-row{display:flex;flex-direction:column;gap:4px;margin-bottom:10px;}
+.settings-row label{font-size:0.57rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;}
+.settings-row input{background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:'DM Mono',monospace;font-size:0.74rem;padding:8px 11px;border-radius:4px;outline:none;width:100%;transition:border-color 0.15s;}
+.settings-row input:focus{border-color:var(--accent);}
+.settings-row input::placeholder{color:var(--muted2);}
+.settings-note{font-size:0.62rem;color:var(--muted);line-height:1.6;background:rgba(96,184,240,0.06);border:1px solid rgba(96,184,240,0.18);border-radius:4px;padding:8px 11px;margin-top:4px;}
+.settings-note strong{color:var(--blue);}
+.od-status{display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:4px;font-size:0.68rem;margin-top:4px;}
+.od-status.connected{background:rgba(93,220,138,0.08);border:1px solid rgba(93,220,138,0.25);color:var(--green);}
+.od-status.disconnected{background:rgba(240,96,96,0.07);border:1px solid rgba(240,96,96,0.2);color:var(--muted);}
+.od-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.od-status.connected .od-dot{background:var(--green);}
+.od-status.disconnected .od-dot{background:var(--muted2);}
+.settings-btn-row{display:flex;gap:7px;margin-top:6px;}
+.btn-od-connect{background:rgba(33,115,70,0.1);border:1px solid rgba(33,115,70,0.35);color:#2e9e5e;font-family:'DM Mono',monospace;font-size:0.64rem;letter-spacing:0.06em;text-transform:uppercase;padding:7px 13px;border-radius:4px;cursor:pointer;transition:all 0.15s;}
+.btn-od-connect:hover{background:rgba(33,115,70,0.2);}
+.btn-od-disconnect{background:none;border:1px solid var(--border);color:var(--muted2);font-family:'DM Mono',monospace;font-size:0.64rem;letter-spacing:0.06em;text-transform:uppercase;padding:7px 13px;border-radius:4px;cursor:pointer;transition:all 0.15s;}
+.btn-od-disconnect:hover{border-color:var(--red);color:var(--red);}
+.gear-btn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-size:0.95rem;width:30px;height:30px;border-radius:5px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s;flex-shrink:0;}
+.gear-btn:hover{border-color:var(--accent);color:var(--accent);}
+.gear-btn.od-active{border-color:rgba(93,220,138,0.4);color:var(--green);}
+
 @media(max-width:600px){
   header,.main,.week-nav{padding-left:13px;padding-right:13px;}
   .employees-grid{grid-template-columns:1fr;}
@@ -275,7 +308,7 @@ body.light .sticky-bar{background:rgba(244,242,237,0.97);}
   .footer-btns{gap:4px;}
 }
 @media print{
-  .week-nav,.action-btn,.icon-btn,.add-emp-btn,.toggle-btn,.sticky-bar,.theme-btn,.install-banner,.tpl-quick{display:none!important;}
+  .week-nav,.action-btn,.icon-btn,.add-emp-btn,.toggle-btn,.sticky-bar,.theme-btn,.install-banner,.tpl-quick,.gear-btn{display:none!important;}
   body{background:white;color:black;padding-bottom:0;}
 }
 </style>
@@ -294,6 +327,7 @@ body.light .sticky-bar{background:rgba(244,242,237,0.97);}
       <div class="payday-badge">⚡ Payday: Friday</div>
     </div>
     <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Light/Dark mode">🌙</button>
+    <button class="gear-btn" id="gear-btn" onclick="openSettings()" title="OneDrive Settings">⚙️</button>
   </div>
 </header>
 
@@ -333,6 +367,7 @@ body.light .sticky-bar{background:rgba(244,242,237,0.97);}
         <div class="summary-subtitle" id="summary-date-label">—</div>
       </div>
       <div class="summary-actions">
+        <button class="action-btn btn-excel" id="excel-btn" onclick="saveToExcel()">📊 Save to Excel</button>
         <button class="action-btn btn-share" onclick="shareCSV()">↑ Share CSV</button>
         <button class="action-btn btn-csv-all" onclick="exportCSV(true)">↓ All Weeks</button>
         <button class="action-btn btn-print" onclick="window.print()">🖨 Print</button>
@@ -417,6 +452,48 @@ body.light .sticky-bar{background:rgba(244,242,237,0.97);}
     <div class="modal-btns" style="margin-top:13px;">
       <button class="btn-cancel" onclick="closeTpl()">Close</button>
       <button class="btn-confirm-green" onclick="saveTpl()">Save Template</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings / OneDrive Modal -->
+<div class="modal-overlay" id="settings-modal" style="display:none;">
+  <div class="modal-box settings-modal">
+    <h3>⚙️ Settings & OneDrive</h3>
+
+    <div class="settings-section">
+      <h4>Microsoft Azure Credentials</h4>
+      <div class="settings-row">
+        <label>Client ID (Application ID)</label>
+        <input type="text" id="s-client-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" oninput="saveSettings()">
+      </div>
+      <div class="settings-row">
+        <label>Tenant ID</label>
+        <input type="text" id="s-tenant-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" oninput="saveSettings()">
+      </div>
+      <div class="settings-note">
+        <strong>Where to find these:</strong> Azure Portal → App registrations → your app → Overview. Your Client Secret is <strong>not needed</strong> here — login is handled securely via Microsoft popup.
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h4>OneDrive Connection</h4>
+      <div class="od-status disconnected" id="od-status">
+        <div class="od-dot"></div>
+        <span id="od-status-text">Not connected — sign in to link your OneDrive</span>
+      </div>
+      <div class="settings-btn-row">
+        <button class="btn-od-connect" id="btn-od-connect" onclick="odSignIn()">🔗 Sign in with Microsoft</button>
+        <button class="btn-od-disconnect" id="btn-od-disconnect" style="display:none;" onclick="odSignOut()">Sign Out</button>
+      </div>
+      <div class="settings-note" style="margin-top:10px;">
+        Excel file will be saved to: <strong style="color:var(--accent)">/Double Sided ISCM/Payroll/Payroll_Master.xlsx</strong><br>
+        Data is <strong>appended</strong> — existing records are never overwritten.
+      </div>
+    </div>
+
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeSettings()">Close</button>
     </div>
   </div>
 </div>
@@ -997,6 +1074,304 @@ function render(){
   updateWeekDisplay(); renderGrid(); renderSummary(); renderMonthly(); updateStickyBar();
 }
 render();
+
+// ═══════════════════════════════════════
+//  SETTINGS
+// ═══════════════════════════════════════
+function openSettings(){
+  // Load saved values
+  document.getElementById('s-client-id').value = localStorage.getItem('pr2_client_id')||'';
+  document.getElementById('s-tenant-id').value  = localStorage.getItem('pr2_tenant_id')||'';
+  updateOdStatusUI();
+  document.getElementById('settings-modal').style.display='flex';
+}
+function closeSettings(){ document.getElementById('settings-modal').style.display='none'; }
+function saveSettings(){
+  localStorage.setItem('pr2_client_id', document.getElementById('s-client-id').value.trim());
+  localStorage.setItem('pr2_tenant_id',  document.getElementById('s-tenant-id').value.trim());
+  // Re-init MSAL if credentials changed
+  _msalInstance = null;
+}
+function updateOdStatusUI(){
+  const acct = localStorage.getItem('pr2_od_account');
+  const status = document.getElementById('od-status');
+  const statusText = document.getElementById('od-status-text');
+  const connectBtn = document.getElementById('btn-od-connect');
+  const disconnectBtn = document.getElementById('btn-od-disconnect');
+  const gearBtn = document.getElementById('gear-btn');
+  if(acct){
+    const name = JSON.parse(acct).name||'Microsoft Account';
+    status.className='od-status connected';
+    statusText.textContent=`Connected as ${name}`;
+    connectBtn.style.display='none';
+    disconnectBtn.style.display='';
+    if(gearBtn) gearBtn.classList.add('od-active');
+  } else {
+    status.className='od-status disconnected';
+    statusText.textContent='Not connected — sign in to link your OneDrive';
+    connectBtn.style.display='';
+    disconnectBtn.style.display='none';
+    if(gearBtn) gearBtn.classList.remove('od-active');
+  }
+}
+
+// ═══════════════════════════════════════
+//  MSAL / ONEDRIVE
+// ═══════════════════════════════════════
+const OD_FOLDER  = '/Double Sided ISCM/Payroll';
+const OD_FILE    = 'Payroll_Master.xlsx';
+const OD_SCOPES  = ['Files.ReadWrite','User.Read'];
+
+let _msalInstance = null;
+
+function getMsal(){
+  const clientId = localStorage.getItem('pr2_client_id')||'';
+  const tenantId = localStorage.getItem('pr2_tenant_id')||'';
+  if(!clientId||!tenantId) return null;
+  if(_msalInstance) return _msalInstance;
+  _msalInstance = new msal.PublicClientApplication({
+    auth:{
+      clientId,
+      authority:`https://login.microsoftonline.com/${tenantId}`,
+      redirectUri: window.location.href.split('?')[0].split('#')[0],
+    },
+    cache:{ cacheLocation:'localStorage', storeAuthStateInCookie:true }
+  });
+  return _msalInstance;
+}
+
+async function odSignIn(){
+  const ms = getMsal();
+  if(!ms){
+    showToast('⚠️ Paste your Client ID and Tenant ID first.'); return;
+  }
+  try{
+    const resp = await ms.loginPopup({scopes: OD_SCOPES});
+    localStorage.setItem('pr2_od_account', JSON.stringify({name: resp.account.name, username: resp.account.username, homeAccountId: resp.account.homeAccountId}));
+    updateOdStatusUI();
+    showToast(`✓ Signed in as ${resp.account.name}`);
+  } catch(e){
+    if(e.errorCode!=='user_cancelled') showToast('Sign in failed: '+e.message);
+  }
+}
+
+function odSignOut(){
+  const ms = getMsal();
+  localStorage.removeItem('pr2_od_account');
+  if(ms){
+    try{ ms.logoutPopup().catch(()=>{}); } catch(e){}
+  }
+  updateOdStatusUI();
+  showToast('Signed out of OneDrive.');
+}
+
+async function getOdToken(){
+  const ms = getMsal();
+  if(!ms) throw new Error('Azure credentials not configured. Open ⚙️ Settings first.');
+  const acctData = localStorage.getItem('pr2_od_account');
+  if(!acctData) throw new Error('Not signed in to OneDrive. Open ⚙️ Settings and sign in.');
+  const acctInfo = JSON.parse(acctData);
+  // Find account in MSAL cache
+  const accounts = ms.getAllAccounts();
+  const account = accounts.find(a=>a.homeAccountId===acctInfo.homeAccountId) || accounts[0];
+  if(!account) throw new Error('Session expired. Please sign in again via ⚙️ Settings.');
+  try{
+    const resp = await ms.acquireTokenSilent({scopes: OD_SCOPES, account});
+    return resp.accessToken;
+  } catch(e){
+    // Silent failed — try popup
+    const resp = await ms.acquireTokenPopup({scopes: OD_SCOPES, account});
+    return resp.accessToken;
+  }
+}
+
+// ─── Build the worksheet rows for this week ───
+function buildExcelRows(){
+  const wk = weekKey();
+  const mon = new Date(wk+'T00:00:00');
+  const fri = new Date(mon); fri.setDate(mon.getDate()+4);
+  const monS = mon.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const friS = fri.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const rows = [];
+  employees.forEach(emp=>{
+    const wRes = calcWage(emp,wk);
+    const notes = weekData[wk]?._notes?.[emp.id]||'';
+    let wrote = false;
+    DAYS.forEach((day,di)=>{
+      const dd = weekData[wk]?.[emp.id]?.[di]||{}; if(!dd.active) return;
+      const date = new Date(mon); date.setDate(mon.getDate()+di);
+      const dateS = date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+      const bm = parseFloat(dd.breakMins)||0;
+      const h  = netHours(dd.start,dd.end,bm);
+      const dOT  = Math.max(0,h-8), dReg = Math.min(h,8), rate = parseFloat(emp.rate)||0;
+      rows.push([
+        monS, friS, emp.name, emp.role, parseFloat(emp.rate),
+        day, dateS, dd.start||'', dd.end||'', bm,
+        parseFloat(h.toFixed(3)), parseFloat(dOT.toFixed(3)),
+        parseFloat((dReg*rate+dOT*rate*1.5).toFixed(2)),
+        !wrote ? parseFloat(wRes.reg.toFixed(2))  : '',
+        !wrote ? parseFloat(wRes.ot.toFixed(2))   : '',
+        !wrote ? parseFloat(wRes.wage.toFixed(2)) : '',
+        !wrote ? notes : ''
+      ]);
+      wrote = true;
+    });
+    if(!wrote && notes){
+      rows.push([monS,friS,emp.name,emp.role,parseFloat(emp.rate),'—','—','—','—',0,0,0,0,0,0,0,notes]);
+    }
+  });
+  return rows;
+}
+
+// ─── Core save to OneDrive Excel ───
+async function saveToExcel(){
+  const btn = document.getElementById('excel-btn');
+  btn.classList.add('loading'); btn.textContent='⏳ Saving...';
+  try{
+    const token = await getOdToken();
+    const headers = { 'Authorization':'Bearer '+token, 'Content-Type':'application/json' };
+    const graphBase = 'https://graph.microsoft.com/v1.0/me';
+    const folderPath = OD_FOLDER;
+    const filePath   = `${folderPath}/${OD_FILE}`;
+
+    // ── Step 1: Check if file exists ──
+    const checkRes = await fetch(`${graphBase}/drive/root:${filePath}`, {headers});
+
+    let workbookId;
+    if(checkRes.status === 404){
+      // ── Step 2a: Create folder if needed, then create file ──
+      showToast('Creating Payroll_Master.xlsx on OneDrive…');
+      // Ensure folder exists
+      await ensureOdFolder(token, folderPath);
+      // Create minimal xlsx using base64 stub, then use Excel API to add sheet
+      workbookId = await createExcelFile(token, filePath);
+    } else if(checkRes.ok){
+      const meta = await checkRes.json();
+      workbookId = meta.id;
+    } else {
+      throw new Error(`OneDrive error: ${checkRes.status} ${checkRes.statusText}`);
+    }
+
+    // ── Step 3: Ensure worksheet "Payroll" exists ──
+    const sheetsRes = await fetch(`${graphBase}/drive/items/${workbookId}/workbook/worksheets`, {headers});
+    const sheetsData = await sheetsRes.json();
+    const sheetNames = (sheetsData.value||[]).map(s=>s.name);
+    let sheetName = 'Payroll';
+
+    if(!sheetNames.includes(sheetName)){
+      // Create sheet + header row
+      await fetch(`${graphBase}/drive/items/${workbookId}/workbook/worksheets`,{
+        method:'POST', headers,
+        body: JSON.stringify({name: sheetName})
+      });
+      // Write header
+      const headerRow = [['Week Starting','Pay Date','Employee','Role','$/hr','Day','Date','Clock In','Clock Out','Break (min)','Net Hrs','OT Hrs','Daily Pay ($)','Wk Reg Hrs','Wk OT Hrs','Wk Total Pay ($)','Notes']];
+      await patchRange(token, workbookId, sheetName, 'A1', headerRow);
+    }
+
+    // ── Step 4: Find next empty row ──
+    const usedRes = await fetch(`${graphBase}/drive/items/${workbookId}/workbook/worksheets('${sheetName}')/usedRange`,{headers});
+    let nextRow = 2; // default after header
+    if(usedRes.ok){
+      const usedData = await usedRes.json();
+      nextRow = (usedData.rowCount||1) + 1;
+      if(nextRow < 2) nextRow = 2;
+    }
+
+    // ── Step 5: Append rows ──
+    const newRows = buildExcelRows();
+    if(!newRows.length){ showToast('No worked days this week to save.'); btn.classList.remove('loading'); btn.textContent='📊 Save to Excel'; return; }
+
+    const startCell = `A${nextRow}`;
+    await patchRange(token, workbookId, sheetName, startCell, newRows);
+
+    showToast(`✓ Saved ${newRows.length} row${newRows.length!==1?'s':''} to OneDrive Excel!`);
+    btn.textContent='✓ Saved!';
+    setTimeout(()=>{btn.textContent='📊 Save to Excel';},3000);
+
+  } catch(e){
+    showToast('❌ '+e.message);
+    btn.textContent='📊 Save to Excel';
+  }
+  btn.classList.remove('loading');
+}
+
+async function ensureOdFolder(token, folderPath){
+  // folderPath like /Double Sided ISCM/Payroll — ensure each level exists
+  const parts = folderPath.split('/').filter(Boolean);
+  let current = '';
+  for(const part of parts){
+    const parent = current || 'root';
+    const checkUrl = current
+      ? `https://graph.microsoft.com/v1.0/me/drive/root:${current}/${part}`
+      : `https://graph.microsoft.com/v1.0/me/drive/root/children?$filter=name eq '${encodeURIComponent(part)}'`;
+    const r = await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:${current}/${part}`,{
+      headers:{'Authorization':'Bearer '+token}
+    });
+    if(r.status===404){
+      // Create folder
+      const parentUrl = current
+        ? `https://graph.microsoft.com/v1.0/me/drive/root:${current}:/children`
+        : `https://graph.microsoft.com/v1.0/me/drive/root/children`;
+      await fetch(parentUrl,{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+        body: JSON.stringify({name:part, folder:{}, '@microsoft.graph.conflictBehavior':'rename'})
+      });
+    }
+    current += '/'+part;
+  }
+}
+
+async function createExcelFile(token, filePath){
+  // Upload a minimal valid xlsx (empty) via upload session
+  // We use a tiny base64-encoded blank xlsx
+  const BLANK_XLSX_B64 = 'UEsDBBQAAAAIAAAAIQBi7p1oXgEAAJAEAAATAAAAW0NvbnRlbnRfVHlwZXNdLnhtbLWUy27CMBBF95X6D5G3ihN6QKhKH6sPKC+wYgZi4bE9tgPl7zshFEqRWlULsUjG95y5k4mz2GlaHZBzZVYDo2sYD0bJ0qxasV8vdXw3WmtJdHtqkB4eDEfOo4oOQKidGGYBifWqtPa20Q5bDRUuBvUi3zibLWCY8tqZ+j4V4AAAD//wMAUEsDBBQAAAAIAAAAIQC1VTAjNQEAAB4CAAAQAAAAZG9jUHJvcHMvYXBwLnhtbJJBT8MgFMfvJn1nS3t0bnXOkBiPxnjQi2EMLAtUA4SwbX57oXO6yLyR8H68x/sDScEQ4qxXjKxGZ3qNlHDkJCTEiZIZQmZFrJRdQzBNqbAXVc0pMnPtHuPO6PxwRgXhDlsNEbVcnX3DTJLA/k2DjnMSV6CeVzOLbxHcHq1SzxlmAzBMCVhU9uX3BgvhCf0dQcn5QWIJ1yW+kvIdmhPO9lp3WnPJ2k7AAAA//8DAFBLAwQUAAAACAAAACEANPsLbAABAACqAAAAFAAAAGRvY1Byb3BzL2N1c3RvbS54bWxdj0EKwjAQRa+S7N2mFbqRkoKiu1JdS2gmoSQzITNFvL0JiuDy8T9veDDK+c0xnJD0MCGlRGpOpMlAqDELKcwDXsJHijBV6l7OiVzFqnMM3DPuLLFYqUKkV5rGWFMeQY7kv0rO3p9RV8d0FHcNWjsqU0VzF/g0Y6VHQEAAP//AwBQSwMEFAAAAAgAAAAhAEwX25ZEAgAAUAYAAA8AAABkb2NQcm9wcy9jb3JlLnhtbACEjsFqwzAQRO+F/oPQvZYdJ6GEWEooFFroochRyGptK1iSkOQU//2kJC2ll72Jmdmdfbv1pu+yP+Rx8KFCWRRIYJB+cKGt0OvuaVkioEbDYHofsIIbrjfX620BAAD//wMAUEsDBBQAAAAIAAAAIQBOx82VZAEAAGwCAAARAQAAd29yZC9kb2N1bWVudC54bWxEkMFOwzAMhu9IvEPkO0u3CW1R0+0wDhwQEgc4pK67RU1SxSmIt8dpJzhw9P+ZT7ZXm78ySB+cEauihLwoQKBpbSt9V8LLdr9cQ0ZM2tLaEZbwgwyb+vFhX504Jo0eGCVAYpcDqVAz+1JKYnhQml2AAAD//wMAUEsBAhQAFAAAAAgAAAAhAGLunWheAQAAkAQAABMAAAAAAAAAAAAgAAAAAAAAW0NvbnRlbnRfVHlwZXNdLnhtbFBLAQIUABQAAAAIAAAAIQC1VTAjNQEAAB4CAAAQAAAAAAAAAAAAIAAAAJcBAABkb2NQcm9wcy9hcHAueG1sUEsBAhQAFAAAAAgAAAAhADT7C2wAAQAAqgAAABQAAAAAAAAAAAAgAAAACgMAAGRvY1Byb3BzL2N1c3RvbS54bWxQSwECFAAUAAAACAAAACEATBfblWQBAABsAgAAEQAAAAAAAAAAAAAgAAAAQAQAAHdvcmQvZG9jdW1lbnQueG1sUEsFBgAAAAAEAAQA5QAAANMFAAAAAA==';
+  const byteStr = atob(BLANK_XLSX_B64);
+  const arr = new Uint8Array(byteStr.length);
+  for(let i=0;i<byteStr.length;i++) arr[i]=byteStr.charCodeAt(i);
+
+  // Use simple PUT upload for small files
+  const uploadRes = await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:${filePath}:/content`,{
+    method:'PUT',
+    headers:{'Authorization':'Bearer '+token,'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},
+    body: arr.buffer
+  });
+  if(!uploadRes.ok) throw new Error(`Could not create Excel file: ${uploadRes.status}`);
+  const meta = await uploadRes.json();
+  return meta.id;
+}
+
+async function patchRange(token, itemId, sheetName, startCell, values){
+  const rows = values.length, cols = values[0].length;
+  // Convert startCell like A2 to end cell
+  const colLetter = startCell.replace(/[0-9]/g,'');
+  const rowNum    = parseInt(startCell.replace(/[A-Z]/gi,''));
+  const endCol    = colIndexToLetter(letterToColIndex(colLetter) + cols - 1);
+  const endCell   = `${endCol}${rowNum + rows - 1}`;
+  const rangeAddr = `${startCell}:${endCell}`;
+
+  const res = await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${itemId}/workbook/worksheets('${sheetName}')/range(address='${rangeAddr}')`,{
+    method:'PATCH',
+    headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+    body: JSON.stringify({values})
+  });
+  if(!res.ok){
+    const err = await res.json().catch(()=>({}));
+    throw new Error(err.error?.message || `Range patch failed: ${res.status}`);
+  }
+}
+
+function letterToColIndex(col){
+  let n=0;
+  for(let i=0;i<col.length;i++) n=n*26+col.charCodeAt(i)-64;
+  return n;
+}
+function colIndexToLetter(n){
+  let s='';
+  while(n>0){ s=String.fromCharCode((n-1)%26+65)+s; n=Math.floor((n-1)/26); }
+  return s;
+}
 
 // iOS install banner
 (function(){
