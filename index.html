@@ -12,6 +12,13 @@
 <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22Weekly%20Wage%20Calculator%22%2C%22short_name%22%3A%22Payroll%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230f0e0c%22%2C%22theme_color%22%3A%22%230f0e0c%22%7D">
 <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' fill='%230f0e0c' rx='80'/><text x='256' y='340' text-anchor='middle' font-size='280' fill='%23f5c842'>$</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<!-- MSAL v2 — official Microsoft CDN (v3 dropped CDN support entirely) -->
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script>
+  if(typeof msal === 'undefined'){
+    document.write('<scr'+'ipt src="https://alcdn.msftauth.net/browser/2.38.3/js/msal-browser.min.js"></scr'+'ipt>');
+  }
+</script>
 <style>
 :root {
   --bg:#0f0e0c; --surface:#161512; --surface2:#1e1c18;
@@ -1088,9 +1095,7 @@ function closeSettings(){ document.getElementById('settings-modal').classList.re
 function saveSettings(){
   localStorage.setItem('pr2_client_id', document.getElementById('s-client-id').value.trim());
   localStorage.setItem('pr2_tenant_id',  document.getElementById('s-tenant-id').value.trim());
-  _msalInstance    = null;
-  _msalInitialized = false;
-  _msalLibPromise  = null;
+  _msalInstance = null; // force re-create with new credentials
 }
 function updateOdStatusUI(){
   const acct = localStorage.getItem('pr2_od_account');
@@ -1118,38 +1123,24 @@ function updateOdStatusUI(){
 // ═══════════════════════════════════════
 //  MSAL / ONEDRIVE
 // ═══════════════════════════════════════
-//  MSAL / ONEDRIVE — ES module dynamic import
-//  No CDN script tag needed — import() fetches MSAL on demand
+//  MSAL v2 / ONEDRIVE
+//  v3 dropped CDN support — using v2 which has stable window.msal global
 // ═══════════════════════════════════════
 const OD_FOLDER = '/Double Sided ISCM/Payroll';
 const OD_FILE   = 'Payroll_Master.xlsx';
 const OD_SCOPES = ['Files.ReadWrite', 'User.Read'];
 
-let _msalInstance    = null;
-let _msalInitialized = false;
-let _msalLibPromise  = null;
+let _msalInstance = null;
 
-function loadMsalLib(){
-  if(!_msalLibPromise){
-    _msalLibPromise = import('https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.10.0/dist/index.esm.js')
-      .catch(()=>
-        import('https://unpkg.com/@azure/msal-browser@3.10.0/dist/index.esm.js')
-      );
-  }
-  return _msalLibPromise;
-}
-
-async function getInitializedMsal(){
+function getMsal(){
   const clientId = localStorage.getItem('pr2_client_id')||'';
   const tenantId = localStorage.getItem('pr2_tenant_id')||'';
   if(!clientId || !tenantId)
     throw new Error('Paste your Client ID and Tenant ID in ⚙️ Settings first.');
-
-  const { PublicClientApplication } = await loadMsalLib();
-
+  if(typeof msal === 'undefined')
+    throw new Error('Auth library not loaded — check internet connection and reload page.');
   if(!_msalInstance){
-    _msalInitialized = false;
-    _msalInstance = new PublicClientApplication({
+    _msalInstance = new msal.PublicClientApplication({
       auth:{
         clientId,
         authority: `https://login.microsoftonline.com/${tenantId}`,
@@ -1157,11 +1148,6 @@ async function getInitializedMsal(){
       },
       cache:{ cacheLocation:'localStorage', storeAuthStateInCookie:true }
     });
-  }
-  if(!_msalInitialized){
-    await _msalInstance.initialize();
-    _msalInitialized = true;
-    await _msalInstance.handleRedirectPromise().catch(()=>{});
   }
   return _msalInstance;
 }
@@ -1172,7 +1158,7 @@ async function odSignIn(){
   btn.textContent = '⏳ Connecting...';
   btn.disabled = true;
   try{
-    const ms   = await getInitializedMsal();
+    const ms   = getMsal();
     const resp = await ms.loginPopup({ scopes: OD_SCOPES, prompt: 'select_account' });
     localStorage.setItem('pr2_od_account', JSON.stringify({
       name:          resp.account.name,
@@ -1194,9 +1180,7 @@ async function odSignIn(){
 }
 
 function odSignOut(){
-  _msalInstance    = null;
-  _msalInitialized = false;
-  _msalLibPromise  = null;
+  _msalInstance = null;
   localStorage.removeItem('pr2_od_account');
   updateOdStatusUI();
   showToast('Signed out of OneDrive.');
@@ -1205,7 +1189,7 @@ function odSignOut(){
 async function getOdToken(){
   const acctData = localStorage.getItem('pr2_od_account');
   if(!acctData) throw new Error('Not signed in. Open ⚙️ Settings and sign in with Microsoft.');
-  const ms       = await getInitializedMsal();
+  const ms       = getMsal();
   const acctInfo = JSON.parse(acctData);
   const accounts = ms.getAllAccounts();
   const account  = accounts.find(a => a.homeAccountId === acctInfo.homeAccountId) || accounts[0];
