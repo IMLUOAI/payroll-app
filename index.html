@@ -1155,7 +1155,7 @@ async function getMsal(){
       auth:{
         clientId,
         authority: `https://login.microsoftonline.com/${tenantId}`,
-        redirectUri: window.location.origin + '/payroll-app/',
+        redirectUri: 'https://imluoai.github.io/payroll-app/',
       },
       cache:{ cacheLocation:'localStorage', storeAuthStateInCookie:true }
     });
@@ -1252,154 +1252,124 @@ function buildExcelRows(){
   return rows;
 }
 
-// ─── Core save to OneDrive Excel ───
+// ─── Core save to OneDrive Excel via SheetJS ───
 async function saveToExcel(){
   const btn = document.getElementById('excel-btn');
   btn.classList.add('loading'); btn.textContent='⏳ Saving...';
   try{
-    const token = await getOdToken();
-    const headers = { 'Authorization':'Bearer '+token, 'Content-Type':'application/json' };
-    const graphBase = 'https://graph.microsoft.com/v1.0/me';
-    const folderPath = OD_FOLDER;
-    const filePath   = `${folderPath}/${OD_FILE}`;
-
-    // ── Step 1: Check if file exists ──
-    const checkRes = await fetch(`${graphBase}/drive/root:${filePath}`, {headers});
-
-    let workbookId;
-    if(checkRes.status === 404){
-      // ── Step 2a: Create folder if needed, then create file ──
-      showToast('Creating Payroll_Master.xlsx on OneDrive…');
-      // Ensure folder exists
-      await ensureOdFolder(token, folderPath);
-      // Create minimal xlsx using base64 stub, then use Excel API to add sheet
-      workbookId = await createExcelFile(token, filePath);
-    } else if(checkRes.ok){
-      const meta = await checkRes.json();
-      workbookId = meta.id;
-    } else {
-      throw new Error(`OneDrive error: ${checkRes.status} ${checkRes.statusText}`);
-    }
-
-    // ── Step 3: Ensure worksheet "Payroll" exists ──
-    const sheetsRes = await fetch(`${graphBase}/drive/items/${workbookId}/workbook/worksheets`, {headers});
-    const sheetsData = await sheetsRes.json();
-    const sheetNames = (sheetsData.value||[]).map(s=>s.name);
-    let sheetName = 'Payroll';
-
-    if(!sheetNames.includes(sheetName)){
-      // Create sheet + header row
-      await fetch(`${graphBase}/drive/items/${workbookId}/workbook/worksheets`,{
-        method:'POST', headers,
-        body: JSON.stringify({name: sheetName})
-      });
-      // Write header
-      const headerRow = [['Week Starting','Pay Date','Employee','Role','$/hr','Day','Date','Clock In','Clock Out','Break (min)','Net Hrs','OT Hrs','Daily Pay ($)','Wk Reg Hrs','Wk OT Hrs','Wk Total Pay ($)','Notes']];
-      await patchRange(token, workbookId, sheetName, 'A1', headerRow);
-    }
-
-    // ── Step 4: Find next empty row ──
-    const usedRes = await fetch(`${graphBase}/drive/items/${workbookId}/workbook/worksheets('${sheetName}')/usedRange`,{headers});
-    let nextRow = 2; // default after header
-    if(usedRes.ok){
-      const usedData = await usedRes.json();
-      nextRow = (usedData.rowCount||1) + 1;
-      if(nextRow < 2) nextRow = 2;
-    }
-
-    // ── Step 5: Append rows ──
     const newRows = buildExcelRows();
-    if(!newRows.length){ showToast('No worked days this week to save.'); btn.classList.remove('loading'); btn.textContent='📊 Save to Excel'; return; }
+    if(!newRows.length){
+      showToast('No worked days this week to save.');
+      btn.classList.remove('loading'); btn.textContent='📊 Save to Excel';
+      return;
+    }
 
-    const startCell = `A${nextRow}`;
-    await patchRange(token, workbookId, sheetName, startCell, newRows);
+    // Load SheetJS on demand
+    const XLSX = await loadSheetJS();
+    const token = await getOdToken();
+    const filePath = `${OD_FOLDER}/${OD_FILE}`;
+    const graphBase = 'https://graph.microsoft.com/v1.0/me';
+    const authHdr = { 'Authorization': 'Bearer ' + token };
+
+    const HEADER = ['Week Starting','Pay Date','Employee','Role','$/hr','Day','Date',
+      'Clock In','Clock Out','Break (min)','Net Hrs','OT Hrs','Daily Pay ($)',
+      'Wk Reg Hrs','Wk OT Hrs','Wk Total Pay ($)','Notes'];
+
+    let wb, ws, existingRows = [];
+
+    // ── Step 1: Try to download existing file ──
+    const dlRes = await fetch(`${graphBase}/drive/root:${filePath}:/content`, {headers: authHdr});
+
+    if(dlRes.ok){
+      // File exists — parse it and extract existing rows
+      const arrayBuf = await dlRes.arrayBuffer();
+      wb = XLSX.read(new Uint8Array(arrayBuf), {type:'array'});
+      const wsName = wb.SheetNames.includes('Payroll') ? 'Payroll' : wb.SheetNames[0];
+      ws = wb.Sheets[wsName];
+      // Get all rows including header
+      existingRows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+      // Remove old header if present so we re-add it cleanly
+      if(existingRows.length && existingRows[0][0]==='Week Starting') existingRows.shift();
+    } else {
+      // File doesn't exist — ensure folder exists then create fresh workbook
+      await ensureOdFolder(token, OD_FOLDER);
+      wb = XLSX.utils.book_new();
+      existingRows = [];
+    }
+
+    // ── Step 2: Build full sheet = header + existing + new rows ──
+    const allRows = [HEADER, ...existingRows, ...newRows];
+    ws = XLSX.utils.aoa_to_sheet(allRows);
+
+    // Column widths for readability
+    ws['!cols'] = [14,14,16,12,6,10,12,10,10,10,8,8,10,10,8,12,20].map(w=>({wch:w}));
+
+    // Re-attach or add Payroll sheet
+    if(wb.SheetNames.includes('Payroll')){
+      wb.Sheets['Payroll'] = ws;
+    } else {
+      XLSX.utils.book_append_sheet(wb, ws, 'Payroll');
+    }
+
+    // ── Step 3: Write to binary and upload ──
+    const wbOut = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+    const blob  = new Blob([wbOut], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+
+    const upRes = await fetch(`${graphBase}/drive/root:${filePath}:/content`,{
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + token,
+                 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+      body: blob
+    });
+    if(!upRes.ok) throw new Error(`Upload failed: ${upRes.status} ${upRes.statusText}`);
 
     showToast(`✓ Saved ${newRows.length} row${newRows.length!==1?'s':''} to OneDrive Excel!`);
     btn.textContent='✓ Saved!';
-    setTimeout(()=>{btn.textContent='📊 Save to Excel';},3000);
+    setTimeout(()=>{ btn.textContent='📊 Save to Excel'; }, 3000);
 
   } catch(e){
-    showToast('❌ '+e.message);
+    showToast('❌ ' + e.message);
     btn.textContent='📊 Save to Excel';
   }
   btn.classList.remove('loading');
 }
 
+// Load SheetJS on demand from CDN
+let _xlsxPromise = null;
+function loadSheetJS(){
+  if(!_xlsxPromise){
+    _xlsxPromise = new Promise((resolve, reject)=>{
+      if(window.XLSX){ resolve(window.XLSX); return; }
+      const s = document.createElement('script');
+      s.src = 'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';
+      s.onload  = ()=> resolve(window.XLSX);
+      s.onerror = ()=> reject(new Error('SheetJS failed to load. Check internet connection.'));
+      document.head.appendChild(s);
+    });
+  }
+  return _xlsxPromise;
+}
+
+// Ensure folder path exists on OneDrive
 async function ensureOdFolder(token, folderPath){
-  // folderPath like /Double Sided ISCM/Payroll — ensure each level exists
   const parts = folderPath.split('/').filter(Boolean);
   let current = '';
   for(const part of parts){
-    const parent = current || 'root';
-    const checkUrl = current
-      ? `https://graph.microsoft.com/v1.0/me/drive/root:${current}/${part}`
-      : `https://graph.microsoft.com/v1.0/me/drive/root/children?$filter=name eq '${encodeURIComponent(part)}'`;
     const r = await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:${current}/${part}`,{
       headers:{'Authorization':'Bearer '+token}
     });
     if(r.status===404){
-      // Create folder
       const parentUrl = current
         ? `https://graph.microsoft.com/v1.0/me/drive/root:${current}:/children`
         : `https://graph.microsoft.com/v1.0/me/drive/root/children`;
       await fetch(parentUrl,{
         method:'POST',
         headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
-        body: JSON.stringify({name:part, folder:{}, '@microsoft.graph.conflictBehavior':'rename'})
+        body: JSON.stringify({name:part, folder:{}, '@microsoft.graph.conflictBehavior':'fail'})
       });
     }
     current += '/'+part;
   }
-}
-
-async function createExcelFile(token, filePath){
-  // Upload a minimal valid xlsx (empty) via upload session
-  // We use a tiny base64-encoded blank xlsx
-  const BLANK_XLSX_B64 = 'UEsDBBQAAAAIAAAAIQBi7p1oXgEAAJAEAAATAAAAW0NvbnRlbnRfVHlwZXNdLnhtbLWUy27CMBBF95X6D5G3ihN6QKhKH6sPKC+wYgZi4bE9tgPl7zshFEqRWlULsUjG95y5k4mz2GlaHZBzZVYDo2sYD0bJ0qxasV8vdXw3WmtJdHtqkB4eDEfOo4oOQKidGGYBifWqtPa20Q5bDRUuBvUi3zibLWCY8tqZ+j4V4AAAD//wMAUEsDBBQAAAAIAAAAIQC1VTAjNQEAAB4CAAAQAAAAZG9jUHJvcHMvYXBwLnhtbJJBT8MgFMfvJn1nS3t0bnXOkBiPxnjQi2EMLAtUA4SwbX57oXO6yLyR8H68x/sDScEQ4qxXjKxGZ3qNlHDkJCTEiZIZQmZFrJRdQzBNqbAXVc0pMnPtHuPO6PxwRgXhDlsNEbVcnX3DTJLA/k2DjnMSV6CeVzOLbxHcHq1SzxlmAzBMCVhU9uX3BgvhCf0dQcn5QWIJ1yW+kvIdmhPO9lp3WnPJ2k7AAAA//8DAFBLAwQUAAAACAAAACEANPsLbAABAACqAAAAFAAAAGRvY1Byb3BzL2N1c3RvbS54bWxdj0EKwjAQRa+S7N2mFbqRkoKiu1JdS2gmoSQzITNFvL0JiuDy8T9veDDK+c0xnJD0MCGlRGpOpMlAqDELKcwDXsJHijBV6l7OiVzFqnMM3DPuLLFYqUKkV5rGWFMeQY7kv0rO3p9RV8d0FHcNWjsqU0VzF/g0Y6VHQEAAP//AwBQSwMEFAAAAAgAAAAhAEwX25ZEAgAAUAYAAA8AAABkb2NQcm9wcy9jb3JlLnhtbACEjsFqwzAQRO+F/oPQvZYdJ6GEWEooFFroochRyGptK1iSkOQU//2kJC2ll72Jmdmdfbv1pu+yP+Rx8KFCWRRIYJB+cKGt0OvuaVkioEbDYHofsIIbrjfX620BAAD//wMAUEsDBBQAAAAIAAAAIQBOx82VZAEAAGwCAAARAQAAd29yZC9kb2N1bWVudC54bWxEkMFOwzAMhu9IvEPkO0u3CW1R0+0wDhwQEgc4pK67RU1SxSmIt8dpJzhw9P+ZT7ZXm78ySB+cEauihLwoQKBpbSt9V8LLdr9cQ0ZM2tLaEZbwgwyb+vFhX504Jo0eGCVAYpcDqVAz+1JKYnhQml2AAAD//wMAUEsBAhQAFAAAAAgAAAAhAGLunWheAQAAkAQAABMAAAAAAAAAAAAgAAAAAAAAW0NvbnRlbnRfVHlwZXNdLnhtbFBLAQIUABQAAAAIAAAAIQC1VTAjNQEAAB4CAAAQAAAAAAAAAAAAIAAAAJcBAABkb2NQcm9wcy9hcHAueG1sUEsBAhQAFAAAAAgAAAAhADT7C2wAAQAAqgAAABQAAAAAAAAAAAAgAAAACgMAAGRvY1Byb3BzL2N1c3RvbS54bWxQSwECFAAUAAAACAAAACEATBfblWQBAABsAgAAEQAAAAAAAAAAAAAgAAAAQAQAAHdvcmQvZG9jdW1lbnQueG1sUEsFBgAAAAAEAAQA5QAAANMFAAAAAA==';
-  const byteStr = atob(BLANK_XLSX_B64);
-  const arr = new Uint8Array(byteStr.length);
-  for(let i=0;i<byteStr.length;i++) arr[i]=byteStr.charCodeAt(i);
-
-  // Use simple PUT upload for small files
-  const uploadRes = await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:${filePath}:/content`,{
-    method:'PUT',
-    headers:{'Authorization':'Bearer '+token,'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},
-    body: arr.buffer
-  });
-  if(!uploadRes.ok) throw new Error(`Could not create Excel file: ${uploadRes.status}`);
-  const meta = await uploadRes.json();
-  return meta.id;
-}
-
-async function patchRange(token, itemId, sheetName, startCell, values){
-  const rows = values.length, cols = values[0].length;
-  // Convert startCell like A2 to end cell
-  const colLetter = startCell.replace(/[0-9]/g,'');
-  const rowNum    = parseInt(startCell.replace(/[A-Z]/gi,''));
-  const endCol    = colIndexToLetter(letterToColIndex(colLetter) + cols - 1);
-  const endCell   = `${endCol}${rowNum + rows - 1}`;
-  const rangeAddr = `${startCell}:${endCell}`;
-
-  const res = await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${itemId}/workbook/worksheets('${sheetName}')/range(address='${rangeAddr}')`,{
-    method:'PATCH',
-    headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
-    body: JSON.stringify({values})
-  });
-  if(!res.ok){
-    const err = await res.json().catch(()=>({}));
-    throw new Error(err.error?.message || `Range patch failed: ${res.status}`);
-  }
-}
-
-function letterToColIndex(col){
-  let n=0;
-  for(let i=0;i<col.length;i++) n=n*26+col.charCodeAt(i)-64;
-  return n;
-}
-function colIndexToLetter(n){
-  let s='';
-  while(n>0){ s=String.fromCharCode((n-1)%26+65)+s; n=Math.floor((n-1)/26); }
-  return s;
 }
 
 // iOS install banner
