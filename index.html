@@ -1155,7 +1155,7 @@ async function getMsal(){
       auth:{
         clientId,
         authority: `https://login.microsoftonline.com/${tenantId}`,
-        redirectUri: window.location.href.split('?')[0].split('#')[0],
+        redirectUri: window.location.origin + '/payroll-app/',
       },
       cache:{ cacheLocation:'localStorage', storeAuthStateInCookie:true }
     });
