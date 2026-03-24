@@ -1421,6 +1421,11 @@ async function buildXlsxBlob(rows, sheetName='Payroll', numericCols=new Set()){
   sheetXml+=`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
     xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`;
 
+  // sheetViews must come before cols per OOXML spec
+  sheetXml+='<sheetViews><sheetView tabSelected="1" workbookViewId="0">';
+  sheetXml+='<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>';
+  sheetXml+='</sheetView></sheetViews>';
+
   // Column widths
   sheetXml+='<cols>';
   COL_WIDTHS.forEach((w,i)=>{
@@ -1428,20 +1433,19 @@ async function buildXlsxBlob(rows, sheetName='Payroll', numericCols=new Set()){
   });
   sheetXml+='</cols>';
 
-  // Freeze first row
-  sheetXml+='<sheetViews><sheetView tabSelected="1" workbookViewId="0">';
-  sheetXml+='<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>';
-  sheetXml+='</sheetView></sheetViews>';
-
   sheetXml+='<sheetData>';
   rows.forEach((row,ri)=>{
     sheetXml+=`<row r="${ri+1}">`;
     row.forEach((val,ci)=>{
       const cellRef=`${colLetter(ci)}${ri+1}`;
-      const isNum = ri>0 && numericCols.has(ci) && val!=='' && val!==null && val!==undefined && !isNaN(Number(val));
+      // In OOXML: numeric cells have NO t attribute, string cells use t="s"
+      const isNum = ri>0 && numericCols.has(ci)
+        && val!=='' && val!==null && val!==undefined && !isNaN(Number(val));
       if(isNum){
-        sheetXml+=`<c r="${cellRef}" t="n"><v>${Number(val)}</v></c>`;
+        // Numeric cell — no t attribute, just <c r=".."><v>number</v></c>
+        sheetXml+=`<c r="${cellRef}"><v>${Number(val)}</v></c>`;
       } else {
+        // String cell — t="s" with shared string index
         const idx=si(val);
         sheetXml+=`<c r="${cellRef}" t="s"><v>${idx}</v></c>`;
       }
