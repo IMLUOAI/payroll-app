@@ -477,7 +477,8 @@ body.light .sticky-bar{background:rgba(244,242,237,0.97);}
       </div>
       <div class="settings-btn-row" style="margin-top:8px;">
         <button class="btn-od-connect" onclick="kvPullStaff(false)" style="background:rgba(96,184,240,0.1);border-color:rgba(96,184,240,0.3);color:var(--blue);">↓ Pull from Cloud</button>
-        <button class="btn-od-connect" onclick="kvPushStaff()" style="margin-left:0;">↑ Push to Cloud</button>
+        <button class="btn-od-connect" onclick="kvPushStaff()">↑ Push to Cloud</button>
+        <button class="btn-od-disconnect" onclick="kvResetStaff()">🗑 Reset Cloud</button>
       </div>
       <div class="settings-note" style="margin-top:8px;">
         Payroll staff is stored independently in Cloudflare KV under its own key — completely separate from Warehub. Add your employees here once and they sync across all browsers automatically.
@@ -630,8 +631,31 @@ async function kvPullStaff(silent=true){
   }
 }
 
-// ═══════════════════════════════════════
-//  THEME
+// Reset cloud staff — wipes KV and pushes current local staff up fresh
+async function kvResetStaff(){
+  showConfirm(
+    'Reset Cloud Staff?',
+    'This will overwrite the cloud staff list with your current local employees. Use this to fix sync issues.',
+    'Reset & Push',
+    'btn-confirm-red',
+    async ()=>{
+      const url = getWorkerUrl();
+      try{
+        const res = await fetch(`${url}/payroll-staff`,{
+          method:'PUT',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(employees)
+        });
+        if(!res.ok) throw new Error(`Worker responded ${res.status}`);
+        setSyncStatus('ok',`Cloud reset ✓ — ${employees.length} staff pushed`);
+        showToast(`✓ Cloud staff reset with ${employees.length} employee${employees.length!==1?'s':''}`);
+      } catch(e){
+        setSyncStatus('error','Reset failed: '+e.message);
+        showToast('❌ Reset failed: '+e.message);
+      }
+    }
+  );
+}
 // ═══════════════════════════════════════
 if(localStorage.getItem('pr2_theme')==='light') document.body.classList.add('light');
 function syncThemeBtn(){ document.getElementById('theme-btn').textContent = document.body.classList.contains('light')?'🌙':'☀️'; }
@@ -810,9 +834,11 @@ function clearEmp(id){
 }
 function deleteEmp(id){
   const emp=employees.find(e=>e.id===id);
-  showConfirm('Remove Employee?',`"${emp?.name}" will be permanently removed from all weeks.`,'Remove','btn-confirm-red',()=>{
+  showConfirm('Remove Employee?',`"${emp?.name}" will be permanently removed from all weeks.`,'Remove','btn-confirm-red',async ()=>{
     employees=employees.filter(e=>e.id!==id);
-    save(); kvPushStaff(); renderGrid(); renderSummary(); updateStickyBar();
+    save();
+    await kvPushStaff(); // must complete before render so KV matches local
+    renderGrid(); renderSummary(); updateStickyBar();
   });
 }
 function addEmployee(){
