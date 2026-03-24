@@ -561,99 +561,68 @@ function save(){
 
 // ═══════════════════════════════════════
 //  CLOUDFLARE KV — STAFF SYNC
+//  saveStaff() writes localStorage + KV together every time.
+//  No manual push/pull. No way to get out of sync.
 // ═══════════════════════════════════════
 const KV_WORKER_URL = 'https://anthropic-proxy.imluoai.workers.dev';
+function getWorkerUrl(){ return (localStorage.getItem('pr2_worker_url')||KV_WORKER_URL).replace(/\/+$/,''); }
 
-function getWorkerUrl(){
-  return (localStorage.getItem('pr2_worker_url') || KV_WORKER_URL).replace(/\/+$/,'');
-}
-
-function setSyncStatus(state, msg){
-  // state: 'ok' | 'error' | 'syncing' | 'idle'
-  const el = document.getElementById('kv-sync-status');
-  const dot = document.getElementById('kv-sync-dot');
-  const txt = document.getElementById('kv-sync-text');
-  if(!el) return;
-  el.className = 'od-status ' + (state==='ok'?'connected':'disconnected');
-  if(dot) dot.style.background = state==='ok'?'var(--green)':state==='syncing'?'var(--accent)':'var(--red)';
-  if(txt) txt.textContent = msg;
-}
-
-// Push current employees to KV
-async function kvPushStaff(){
-  const url = getWorkerUrl();
+// Write staff to localStorage AND KV in one call
+async function saveStaff(){
+  localStorage.setItem('pr2_emps', JSON.stringify(employees));
+  setSyncStatus('syncing','Saving…');
   try{
-    const res = await fetch(`${url}/payroll-staff`,{
+    const res = await fetch(`${getWorkerUrl()}/payroll-staff`,{
       method:'PUT',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify(employees)
     });
-    if(!res.ok) throw new Error(`Worker responded ${res.status}`);
-    setSyncStatus('ok', `Staff synced to cloud ✓`);
+    if(!res.ok) throw new Error(`${res.status}`);
+    setSyncStatus('ok',`Synced ✓  ${employees.length} staff`);
   } catch(e){
-    setSyncStatus('error', `Sync failed: ${e.message}`);
+    setSyncStatus('error',`Cloud sync failed — saved locally only`);
   }
 }
 
-// Pull staff from KV — called on page load and manual sync
-async function kvPullStaff(silent=true){
-  const url = getWorkerUrl();
-  setSyncStatus('syncing', 'Connecting to Worker…');
+// On first load of a new browser — pull from KV once
+async function kvInitialLoad(){
   try{
-    const res = await fetch(`${url}/payroll-staff`);
-    if(!res.ok) throw new Error(`Worker returned ${res.status} — check Worker is deployed`);
+    const res = await fetch(`${getWorkerUrl()}/payroll-staff`);
+    if(!res.ok) return;
     const data = await res.json();
-    if(!Array.isArray(data)) throw new Error('Worker returned unexpected data format');
-    if(data.length === 0){
-      setSyncStatus('ok', 'Cloud empty — pushing local staff up…');
-      await kvPushStaff();
-      return;
-    }
-    employees = data.map((e,i) => ({
+    if(!Array.isArray(data)||!data.length) return;
+    employees = data.map((e,i)=>({
       id:    e.id    || Date.now()+i,
       name:  e.name  || `Employee ${i+1}`,
       role:  e.role  || 'Part-time',
-      rate:  parseFloat(e.rate) || 15.00,
+      rate:  parseFloat(e.rate)||15.00,
       color: e.color ?? i%6,
     }));
     localStorage.setItem('pr2_emps', JSON.stringify(employees));
-    const now = new Date().toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-    localStorage.setItem('pr2_last_sync', now);
-    setSyncStatus('ok', `${employees.length} staff loaded ✓ (${now})`);
+    setSyncStatus('ok',`${employees.length} staff loaded from cloud`);
     render();
-    if(!silent) showToast(`✓ Staff synced — ${employees.length} employee${employees.length!==1?'s':''} loaded`);
-  } catch(e){
-    const msg = e.message.includes('Failed to fetch')
-      ? `Cannot reach ${url} — check Worker is deployed and URL is correct`
-      : e.message;
-    setSyncStatus('error', msg);
-    if(!silent) showToast('❌ ' + msg);
-  }
+  } catch(e){ /* offline — use local */ }
 }
 
-// Reset cloud staff — wipes KV and pushes current local staff up fresh
+function setSyncStatus(state,msg){
+  const el=document.getElementById('kv-sync-status');
+  const dot=document.getElementById('kv-sync-dot');
+  const txt=document.getElementById('kv-sync-text');
+  if(!el) return;
+  el.className='od-status '+(state==='ok'?'connected':'disconnected');
+  if(dot) dot.style.background=state==='ok'?'var(--green)':state==='syncing'?'var(--accent)':'var(--red)';
+  if(txt) txt.textContent=msg;
+}
+
+// Keep these for the manual buttons in Settings (useful for cross-device sync)
+async function kvPushStaff(){ await saveStaff(); showToast('✓ Staff pushed to cloud'); }
+async function kvPullStaff(silent=false){
+  await kvInitialLoad();
+  if(!silent) showToast('✓ Staff pulled from cloud');
+}
 async function kvResetStaff(){
-  showConfirm(
-    'Reset Cloud Staff?',
-    'This will overwrite the cloud staff list with your current local employees. Use this to fix sync issues.',
-    'Reset & Push',
-    'btn-confirm-red',
-    async ()=>{
-      const url = getWorkerUrl();
-      try{
-        const res = await fetch(`${url}/payroll-staff`,{
-          method:'PUT',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify(employees)
-        });
-        if(!res.ok) throw new Error(`Worker responded ${res.status}`);
-        setSyncStatus('ok',`Cloud reset ✓ — ${employees.length} staff pushed`);
-        showToast(`✓ Cloud staff reset with ${employees.length} employee${employees.length!==1?'s':''}`);
-      } catch(e){
-        setSyncStatus('error','Reset failed: '+e.message);
-        showToast('❌ Reset failed: '+e.message);
-      }
-    }
+  showConfirm('Reset Cloud Staff?','Overwrites cloud with your current local staff list.','Reset & Push','btn-confirm-red',
+    async()=>{ await saveStaff(); showToast(`✓ Cloud reset — ${employees.length} staff`); }
   );
 }
 // ═══════════════════════════════════════
@@ -805,10 +774,10 @@ function setField(empId,di,field,val){
   save(); refreshDayRow(empId,di); renderSummary(); updateStickyBar();
 }
 function updateEmp(id,field,val){
-  // eslint-disable-next-line eqeqeq
   const e=employees.find(e=>e.id===id); if(!e) return;
-  e[field]=val; save(); kvPushStaff();
+  e[field]=val;
   if(field==='name'){const av=document.querySelector(`#card-${id} .emp-avatar`);if(av)av.textContent=val.charAt(0).toUpperCase();}
+  saveStaff();
   renderSummary(); updateStickyBar();
   if(field==='rate') refreshFooter(id);
 }
@@ -825,7 +794,11 @@ function showConfirm(title,msg,btnLabel,btnClass,cb){
   _cb=cb; document.getElementById('confirm-modal').classList.add('open');
 }
 function closeConfirm(){ document.getElementById('confirm-modal').classList.remove('open'); _cb=null; }
-async function confirmOk(){ closeConfirm(); if(_cb) await _cb(); }
+async function confirmOk(){
+  const cb = _cb; // save before closeConfirm nulls it
+  closeConfirm();
+  if(cb) await cb();
+}
 
 // ═══════════════════════════════════════
 //  EMPLOYEE ACTIONS
@@ -838,15 +811,10 @@ function clearEmp(id){
   });
 }
 function deleteEmp(id){
-  // eslint-disable-next-line eqeqeq
   const emp=employees.find(e=>e.id===id);
-  showConfirm('Remove Employee?',`"${emp?.name}" will be permanently removed from all weeks.`,'Remove','btn-confirm-red',async ()=>{
-    employees = employees.filter(e=>e.id!==id);
-    // Write to localStorage first — this is what page reloads will read
-    localStorage.setItem('pr2_emps', JSON.stringify(employees));
-    save();
-    // Then push to KV so other browsers get the update
-    await kvPushStaff();
+  showConfirm('Remove Employee?',`"${emp?.name}" will be permanently removed.`,'Remove','btn-confirm-red',async()=>{
+    employees=employees.filter(e=>e.id!==id);
+    await saveStaff();
     renderGrid(); renderSummary(); updateStickyBar();
   });
 }
@@ -854,7 +822,7 @@ function addEmployee(){
   const used=employees.map(e=>e.color);
   const c=[0,1,2,3,4,5].find(x=>!used.includes(x))??employees.length%6;
   employees.push({id:Date.now(),name:`Employee ${employees.length+1}`,role:'Part-time',rate:15.00,color:c});
-  save(); kvPushStaff(); renderGrid(); renderSummary(); updateStickyBar();
+  saveStaff(); renderGrid(); renderSummary(); updateStickyBar();
 }
 
 // ═══════════════════════════════════════
@@ -1210,11 +1178,9 @@ function render(){
   updateWeekDisplay(); renderGrid(); renderSummary(); renderMonthly(); updateStickyBar();
 }
 render();
-// Only auto-pull from KV if this is a brand new browser with no local staff yet.
-// If local staff exists, the user's local data is source of truth — use manual
-// ↓ Pull or ↑ Push in Settings to sync explicitly.
+// On a brand new browser with no local staff — pull once from KV
 if(!localStorage.getItem('pr2_emps')){
-  kvPullStaff();
+  kvInitialLoad();
 }
 
 // ═══════════════════════════════════════
@@ -1555,11 +1521,7 @@ async function saveToExcel(){
   btn.classList.add('loading'); btn.textContent='⏳ Saving...';
   try{
     const newRows = buildExcelRows();
-    if(!newRows.length){
-      showToast('No worked days this week to save.');
-      btn.classList.remove('loading'); btn.textContent='📊 Save to Excel';
-      return;
-    }
+    // newRows may be empty if no days toggled — we still write header + any existing rows
 
     const token     = await getOdToken();
     const filePath  = `${OD_FOLDER}/${OD_FILE}`;
@@ -1570,47 +1532,53 @@ async function saveToExcel(){
       'Clock In','Clock Out','Break (min)','Net Hrs','OT Hrs','Daily Pay ($)',
       'Wk Reg Hrs','Wk OT Hrs','Wk Total Pay ($)','Notes'];
 
-    // Numeric column indexes (0-based)
     const NUM_COLS = new Set([4,9,10,11,12,13,14,15]);
 
     // ── Fetch existing rows if file exists ──
     let existingRows = [];
     const dlRes = await fetch(`${graphBase}/drive/root:${filePath}:/content`,{headers:authHdr});
     if(dlRes.ok){
-      // File exists — we need to read its rows
-      // Since we're building our own format, parse the raw XML from the ZIP
       try{
         const JSZip = await loadJSZip();
         const buf   = await dlRes.arrayBuffer();
         const zip   = await JSZip.loadAsync(buf);
-        const sheetXmlStr = await zip.file('xl/worksheets/sheet1.xml').async('string');
-        const sstStr      = zip.file('xl/sharedStrings.xml')
-          ? await zip.file('xl/sharedStrings.xml').async('string') : '';
+        const sheetFile = zip.file('xl/worksheets/sheet1.xml');
+        const sstFile   = zip.file('xl/sharedStrings.xml');
+        if(sheetFile){
+          const sheetXmlStr = await sheetFile.async('string');
+          const sstStr      = sstFile ? await sstFile.async('string') : '';
 
-        // Parse shared strings
-        const sst=[];
-        sstStr.replace(/<t[^>]*>([\s\S]*?)<\/t>/g,(_,t)=>{
-          sst.push(t.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'"));
-        });
-
-        // Parse rows — skip first row (header), keep all data rows
-        const rowMatches=[...sheetXmlStr.matchAll(/<row[^>]*r="(\d+)"[^>]*>([\s\S]*?)<\/row>/g)];
-        rowMatches.forEach((rm)=>{
-          const rowNum = parseInt(rm[1]);
-          if(rowNum === 1) return; // skip header row (row 1 in Excel = index 1)
-          const cells=[];
-          // Match all cells — with or without t attribute (numeric cells have no t)
-          const cellMatches=[...rm[2].matchAll(/<c r="([A-Z]+\d+)"([^>]*)>(?:<v>([\s\S]*?)<\/v>)?/g)];
-          cellMatches.forEach(cm=>{
-            const attrs=cm[2], v=cm[3]||'';
-            const isSharedStr = attrs.includes('t="s"');
-            cells.push(isSharedStr ? (sst[parseInt(v)]||'') : v);
+          // Build shared strings lookup
+          const sst=[];
+          sstStr.replace(/<t[^>]*>([\s\S]*?)<\/t>/g,(_,t)=>{
+            sst.push(t
+              .replace(/&amp;/g,'&').replace(/&lt;/g,'<')
+              .replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'")
+            );
           });
-          if(cells.length) existingRows.push(cells);
-        });
-      } catch(e){ existingRows=[]; } // if parse fails just start fresh
+
+          // Parse rows — skip row 1 (header)
+          const rowMatches=[...sheetXmlStr.matchAll(/<row[^>]*\br="(\d+)"[^>]*>([\s\S]*?)<\/row>/g)];
+          rowMatches.forEach(rm=>{
+            if(parseInt(rm[1])===1) return;
+            const cells=[];
+            const cellMatches=[...rm[2].matchAll(/<c\s[^>]*\br="([A-Z]+\d+)"([^>]*)>(?:[\s\S]*?<v>([\s\S]*?)<\/v>)?[\s\S]*?<\/c>/g)];
+            cellMatches.forEach(cm=>{
+              const isStr = cm[2].includes('t="s"');
+              const v = cm[3]||'';
+              cells.push(isStr ? (sst[parseInt(v)]||'') : v);
+            });
+            if(cells.length) existingRows.push(cells);
+          });
+        }
+      } catch(parseErr){
+        showToast(`⚠️ Could not read existing file — starting fresh. (${parseErr.message})`);
+        existingRows=[];
+      }
     } else if(dlRes.status===404){
       await ensureOdFolder(token, OD_FOLDER);
+    } else if(dlRes.status===423){
+      throw new Error('File is locked — close it in Excel first, then try again.');
     } else {
       throw new Error(`OneDrive error ${dlRes.status}`);
     }
@@ -1624,9 +1592,15 @@ async function saveToExcel(){
       headers:{...authHdr,'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},
       body: blob
     });
-    if(!upRes.ok) throw new Error(`Upload failed: ${upRes.status} ${upRes.statusText}`);
+    if(!upRes.ok){
+      if(upRes.status===423) throw new Error('File is locked — close it in Excel first, then try again.');
+      throw new Error(`Upload failed: ${upRes.status} ${upRes.statusText}`);
+    }
 
-    showToast(`✓ Saved ${newRows.length} row${newRows.length!==1?'s':''} to OneDrive Excel!`);
+    const msg = newRows.length
+      ? `✓ Saved ${newRows.length} row${newRows.length!==1?'s':''} to OneDrive Excel!`
+      : '✓ File saved to OneDrive (header only — no active days this week)';
+    showToast(msg);
     btn.textContent='✓ Saved!';
     setTimeout(()=>{ btn.textContent='📊 Save to Excel'; },3000);
 
