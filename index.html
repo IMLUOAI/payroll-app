@@ -480,7 +480,7 @@ body.light .sticky-bar{background:rgba(244,242,237,0.97);}
         <button class="btn-od-connect" onclick="kvPushStaff()" style="margin-left:0;">↑ Push to Cloud</button>
       </div>
       <div class="settings-note" style="margin-top:8px;">
-        Staff list syncs to Cloudflare KV so it stays the same on every browser and device. Uses your existing Worker at <strong style="color:var(--accent)">https://anthropic-proxy.imluoai.workers.dev</strong> — no Worker URL needed unless it changes.
+        Payroll staff is stored independently in Cloudflare KV under its own key — completely separate from Warehub. Add your employees here once and they sync across all browsers automatically.
       </div>
     </div>
 
@@ -608,7 +608,13 @@ async function kvPullStaff(silent=true){
       await kvPushStaff();
       return;
     }
-    employees = data;
+    employees = data.map((e,i) => ({
+      id:    e.id    || Date.now()+i,
+      name:  e.name  || `Employee ${i+1}`,
+      role:  e.role  || 'Part-time',
+      rate:  parseFloat(e.rate) || 15.00,
+      color: e.color ?? i%6,
+    }));
     localStorage.setItem('pr2_emps', JSON.stringify(employees));
     const now = new Date().toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
     localStorage.setItem('pr2_last_sync', now);
@@ -963,6 +969,12 @@ function renderGrid(){
   const grid=document.getElementById('emp-grid'); grid.innerHTML='';
   const dates=dayDates();
   employees.forEach(emp=>{
+    // Sanitize fields — guard against missing data from KV
+    emp.name  = emp.name  || `Employee ${emp.id}`;
+    emp.role  = emp.role  || 'Part-time';
+    emp.rate  = emp.rate  || 15.00;
+    emp.color = emp.color ?? 0;
+
     const r=calcWage(emp,weekKey());
     const card=document.createElement('div');
     card.className='emp-card'+(r.ot>0?' ot-warning':''); card.id=`card-${emp.id}`;
