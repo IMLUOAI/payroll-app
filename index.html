@@ -481,7 +481,7 @@ body.light .sticky-bar{background:rgba(244,242,237,0.97);}
         <button class="btn-od-disconnect" onclick="kvResetStaff()">🗑 Reset Cloud</button>
       </div>
       <div class="settings-note" style="margin-top:8px;">
-        Payroll staff is stored independently in Cloudflare KV under its own key — completely separate from Warehub. Add your employees here once and they sync across all browsers automatically.
+        Payroll staff is stored independently in Cloudflare KV. On a <strong>new browser</strong> it pulls automatically. On existing browsers, use <strong>↓ Pull</strong> to load from cloud or <strong>↑ Push</strong> to save local to cloud. Use <strong>🗑 Reset Cloud</strong> to fix sync issues.
       </div>
     </div>
 
@@ -1201,8 +1201,12 @@ function render(){
   updateWeekDisplay(); renderGrid(); renderSummary(); renderMonthly(); updateStickyBar();
 }
 render();
-// Pull staff from KV silently on load — re-renders if KV has newer data
-kvPullStaff();
+// Only auto-pull from KV if this is a brand new browser with no local staff yet.
+// If local staff exists, the user's local data is source of truth — use manual
+// ↓ Pull or ↑ Push in Settings to sync explicitly.
+if(!localStorage.getItem('pr2_emps')){
+  kvPullStaff();
+}
 
 // ═══════════════════════════════════════
 //  SETTINGS
