@@ -801,7 +801,8 @@ function setField(empId,di,field,val){
   save(); refreshDayRow(empId,di); renderSummary(); updateStickyBar();
 }
 function updateEmp(id,field,val){
-  const e=employees.find(e=>e.id===id); if(!e) return;
+  // eslint-disable-next-line eqeqeq
+  const e=employees.find(e=>e.id==id); if(!e) return;
   e[field]=val; save(); kvPushStaff();
   if(field==='name'){const av=document.querySelector(`#card-${id} .emp-avatar`);if(av)av.textContent=val.charAt(0).toUpperCase();}
   renderSummary(); updateStickyBar();
@@ -820,7 +821,7 @@ function showConfirm(title,msg,btnLabel,btnClass,cb){
   _cb=cb; document.getElementById('confirm-modal').classList.add('open');
 }
 function closeConfirm(){ document.getElementById('confirm-modal').classList.remove('open'); _cb=null; }
-function confirmOk(){ closeConfirm(); if(_cb)_cb(); }
+async function confirmOk(){ closeConfirm(); if(_cb) await _cb(); }
 
 // ═══════════════════════════════════════
 //  EMPLOYEE ACTIONS
@@ -833,11 +834,15 @@ function clearEmp(id){
   });
 }
 function deleteEmp(id){
-  const emp=employees.find(e=>e.id===id);
+  // eslint-disable-next-line eqeqeq
+  const emp=employees.find(e=>e.id==id);
   showConfirm('Remove Employee?',`"${emp?.name}" will be permanently removed from all weeks.`,'Remove','btn-confirm-red',async ()=>{
-    employees=employees.filter(e=>e.id!==id);
+    employees = employees.filter(e=>e.id!=id);
+    // Write to localStorage first — this is what page reloads will read
+    localStorage.setItem('pr2_emps', JSON.stringify(employees));
     save();
-    await kvPushStaff(); // must complete before render so KV matches local
+    // Then push to KV so other browsers get the update
+    await kvPushStaff();
     renderGrid(); renderSummary(); updateStickyBar();
   });
 }
@@ -925,7 +930,7 @@ function refreshDayRow(empId,di){
   refreshFooter(empId);
 }
 function refreshFooter(empId){
-  const emp=employees.find(e=>e.id===empId); if(!emp) return;
+  const emp=employees.find(e=>e.id==empId); if(!emp) return;
   const r=calcWage(emp,weekKey());
   const s=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
   s(`fh-${empId}`,r.hours.toFixed(2)+'h');
@@ -955,20 +960,20 @@ function buildRow(emp,di,dates){
     <div class="time-input-wrap">
       <span class="time-lbl">in</span>
       <input type="time" class="time-input" value="${dd.start||''}" ${!dd.active?'disabled':''}
-        onchange="setField(${emp.id},${di},'start',this.value)">
+        onchange="setField('${emp.id}',${di},'start',this.value)">
     </div>
     <div class="time-input-wrap">
       <span class="time-lbl">out</span>
       <input type="time" class="time-input" value="${dd.end||''}" ${!dd.active?'disabled':''}
-        onchange="setField(${emp.id},${di},'end',this.value)">
+        onchange="setField('${emp.id}',${di},'end',this.value)">
     </div>
     <input type="number" class="break-input" min="0" max="480" step="5" placeholder="min"
       value="${dd.breakMins||''}" ${!dd.active?'disabled':''}
-      onchange="setField(${emp.id},${di},'breakMins',this.value)">
+      onchange="setField('${emp.id}',${di},'breakMins',this.value)">
     <div class="day-hours${h===0?' zero':h>8?' ot':''}" id="hrs-${emp.id}-${di}">${h>0?h.toFixed(2)+'h':'—'}</div>
     <div class="toggle-wrap">
-      <div class="toggle-btn${dd.active?' on':''}" onclick="toggleDay(${emp.id},${di})"></div>
-      ${dd.active?`<span class="tpl-quick" onclick="openTpl(${emp.id},${di})" title="Apply template">⚡</span>`:''}
+      <div class="toggle-btn${dd.active?' on':''}" onclick="toggleDay('${emp.id}',${di})"></div>
+      ${dd.active?`<span class="tpl-quick" onclick="openTpl('${emp.id}',${di})" title="Apply template">⚡</span>`:''}
     </div>`;
   return row;
 }
@@ -977,7 +982,7 @@ function buildRow(emp,di,dates){
 //  RENDER CARD
 // ═══════════════════════════════════════
 function renderCard(empId){
-  const emp=employees.find(e=>e.id===empId); if(!emp) return;
+  const emp=employees.find(e=>e.id==empId); if(!emp) return;
   const card=document.getElementById(`card-${empId}`);
   if(!card){renderGrid();return;}
   const dates=dayDates();
@@ -1009,15 +1014,15 @@ function renderGrid(){
     hdr.innerHTML=`
       <div class="emp-avatar color-${emp.color}">${emp.name.charAt(0).toUpperCase()}</div>
       <div class="emp-info">
-        <input class="emp-name-input" type="text" value="${emp.name}" onchange="updateEmp(${emp.id},'name',this.value)">
-        <input class="emp-role-input" type="text" value="${emp.role}" placeholder="Role" onchange="updateEmp(${emp.id},'role',this.value)">
+        <input class="emp-name-input" type="text" value="${emp.name}" onchange="updateEmp('${emp.id}','name',this.value)">
+        <input class="emp-role-input" type="text" value="${emp.role}" placeholder="Role" onchange="updateEmp('${emp.id}','role',this.value)">
       </div>
       <div class="emp-header-right">
         <span class="ot-badge${r.ot>0?' show':''}" id="ot-badge-${emp.id}">⚠ OT</span>
         <div class="emp-rate-wrap">
           <span class="rate-label">$/hr</span><span class="rate-prefix">$</span>
           <input class="emp-rate-input" type="number" min="0" step="0.5" value="${emp.rate}"
-            onchange="updateEmp(${emp.id},'rate',parseFloat(this.value)||0)">
+            onchange="updateEmp('${emp.id}','rate',parseFloat(this.value)||0)">
         </div>
       </div>`;
     card.appendChild(hdr);
@@ -1032,7 +1037,7 @@ function renderGrid(){
 
     const ns=document.createElement('div'); ns.className='notes-section';
     ns.innerHTML=`<div class="notes-header"><span style="font-size:0.76rem">📝</span><span class="notes-label">Week Notes</span></div>
-      <textarea class="notes-input" rows="2" placeholder="Sick day, bonus, deductions…" oninput="setNotes(${emp.id},this.value)">${getNotes(emp.id)}</textarea>`;
+      <textarea class="notes-input" rows="2" placeholder="Sick day, bonus, deductions…" oninput="setNotes('${emp.id}',this.value)">${getNotes(emp.id)}</textarea>`;
     card.appendChild(ns);
 
     const ft=document.createElement('div'); ft.className='emp-footer';
@@ -1044,10 +1049,10 @@ function renderGrid(){
         <div class="stat"><span class="stat-label">This Week</span><span class="stat-val wage" id="fw-${emp.id}">$${r.wage.toFixed(2)}</span></div>
       </div>
       <div class="footer-btns">
-        <button class="icon-btn copy-btn" onclick="copyLastWeek(${emp.id})">↩ Copy</button>
-        <button class="icon-btn" onclick="openTpl(${emp.id},null)">⚡ Tpl</button>
-        <button class="icon-btn" onclick="clearEmp(${emp.id})">Clear</button>
-        <button class="icon-btn danger" onclick="deleteEmp(${emp.id})">✕ Del</button>
+        <button class="icon-btn copy-btn" onclick="copyLastWeek('${emp.id}')">↩ Copy</button>
+        <button class="icon-btn" onclick="openTpl('${emp.id}',null)">⚡ Tpl</button>
+        <button class="icon-btn" onclick="clearEmp('${emp.id}')">Clear</button>
+        <button class="icon-btn danger" onclick="deleteEmp('${emp.id}')">✕ Del</button>
       </div>`;
     card.appendChild(ft);
     grid.appendChild(card);
