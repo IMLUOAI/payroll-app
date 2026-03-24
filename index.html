@@ -471,8 +471,16 @@ body.light .sticky-bar{background:rgba(244,242,237,0.97);}
         <label>Worker URL</label>
         <input type="text" id="s-worker-url" placeholder="https://your-worker.workers.dev" oninput="saveSettings()">
       </div>
-      <div class="settings-note">
-        Staff list syncs to Cloudflare KV so it stays the same on every browser and device. Uses your existing Worker — just add the <strong style="color:var(--accent)">/payroll-staff</strong> route (see README).
+      <div class="od-status disconnected" id="kv-sync-status" style="margin-top:6px;">
+        <div class="od-dot" id="kv-sync-dot"></div>
+        <span id="kv-sync-text">Not synced yet</span>
+      </div>
+      <div class="settings-btn-row" style="margin-top:8px;">
+        <button class="btn-od-connect" onclick="kvPullStaff(false)" style="background:rgba(96,184,240,0.1);border-color:rgba(96,184,240,0.3);color:var(--blue);">↓ Pull from Cloud</button>
+        <button class="btn-od-connect" onclick="kvPushStaff()" style="margin-left:0;">↑ Push to Cloud</button>
+      </div>
+      <div class="settings-note" style="margin-top:8px;">
+        Staff list syncs to Cloudflare KV so it stays the same on every browser and device. Uses your existing Worker at <strong style="color:var(--accent)">https://anthropic-proxy.imluoai.workers.dev</strong> — no Worker URL needed unless it changes.
       </div>
     </div>
 
@@ -552,37 +560,68 @@ function save(){
 
 // ═══════════════════════════════════════
 //  CLOUDFLARE KV — STAFF SYNC
-//  Staff list syncs to KV so it survives
-//  across all browsers and devices.
 // ═══════════════════════════════════════
-const KV_WORKER_URL = localStorage.getItem('pr2_worker_url')
-  || 'https://anthropic-proxy.imluoai.workers.dev';
+const KV_WORKER_URL = 'https://anthropic-proxy.imluoai.workers.dev';
 
-// Push current employees to KV (called after any staff change)
+function getWorkerUrl(){
+  return (localStorage.getItem('pr2_worker_url') || KV_WORKER_URL).replace(/\/+$/,'');
+}
+
+function setSyncStatus(state, msg){
+  // state: 'ok' | 'error' | 'syncing' | 'idle'
+  const el = document.getElementById('kv-sync-status');
+  const dot = document.getElementById('kv-sync-dot');
+  const txt = document.getElementById('kv-sync-text');
+  if(!el) return;
+  el.className = 'od-status ' + (state==='ok'?'connected':'disconnected');
+  if(dot) dot.style.background = state==='ok'?'var(--green)':state==='syncing'?'var(--accent)':'var(--red)';
+  if(txt) txt.textContent = msg;
+}
+
+// Push current employees to KV
 async function kvPushStaff(){
-  const url = (localStorage.getItem('pr2_worker_url')||KV_WORKER_URL).replace(/\/$/,'');
+  const url = getWorkerUrl();
   try{
-    await fetch(`${url}/payroll-staff`,{
+    const res = await fetch(`${url}/payroll-staff`,{
       method:'PUT',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify(employees)
     });
-  } catch(e){ /* silent — local data is always source of truth */ }
+    if(!res.ok) throw new Error(`Worker responded ${res.status}`);
+    setSyncStatus('ok', `Staff synced to cloud ✓`);
+  } catch(e){
+    setSyncStatus('error', `Sync failed: ${e.message}`);
+  }
 }
 
-// Pull staff from KV — called on page load
-async function kvPullStaff(){
-  const url = (localStorage.getItem('pr2_worker_url')||KV_WORKER_URL).replace(/\/$/,'');
+// Pull staff from KV — called on page load and manual sync
+async function kvPullStaff(silent=true){
+  const url = getWorkerUrl();
+  setSyncStatus('syncing', 'Connecting to Worker…');
   try{
     const res = await fetch(`${url}/payroll-staff`);
-    if(!res.ok) return;
+    if(!res.ok) throw new Error(`Worker returned ${res.status} — check Worker is deployed`);
     const data = await res.json();
-    if(!Array.isArray(data)||!data.length) return;
-    // KV is source of truth — replace local staff list
+    if(!Array.isArray(data)) throw new Error('Worker returned unexpected data format');
+    if(data.length === 0){
+      setSyncStatus('ok', 'Cloud empty — pushing local staff up…');
+      await kvPushStaff();
+      return;
+    }
     employees = data;
     localStorage.setItem('pr2_emps', JSON.stringify(employees));
+    const now = new Date().toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    localStorage.setItem('pr2_last_sync', now);
+    setSyncStatus('ok', `${employees.length} staff loaded ✓ (${now})`);
     render();
-  } catch(e){ /* offline or Worker not updated yet — use local */ }
+    if(!silent) showToast(`✓ Staff synced — ${employees.length} employee${employees.length!==1?'s':''} loaded`);
+  } catch(e){
+    const msg = e.message.includes('Failed to fetch')
+      ? `Cannot reach ${url} — check Worker is deployed and URL is correct`
+      : e.message;
+    setSyncStatus('error', msg);
+    if(!silent) showToast('❌ ' + msg);
+  }
 }
 
 // ═══════════════════════════════════════
@@ -1135,6 +1174,10 @@ function openSettings(){
   document.getElementById('s-client-id').value  = localStorage.getItem('pr2_client_id')||'';
   document.getElementById('s-tenant-id').value   = localStorage.getItem('pr2_tenant_id')||'';
   updateOdStatusUI();
+  // Show current sync status
+  const lastSync = localStorage.getItem('pr2_last_sync');
+  if(lastSync) setSyncStatus('ok', `Last synced: ${lastSync}`);
+  else setSyncStatus('idle', 'Not synced yet on this browser');
   document.getElementById('settings-modal').classList.add('open');
 }
 function closeSettings(){ document.getElementById('settings-modal').classList.remove('open'); }
