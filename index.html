@@ -466,6 +466,17 @@ body.light .sticky-bar{background:rgba(244,242,237,0.97);}
     <h3>⚙️ Settings & OneDrive</h3>
 
     <div class="settings-section">
+      <h4>☁️ Cloudflare Staff Sync</h4>
+      <div class="settings-row">
+        <label>Worker URL</label>
+        <input type="text" id="s-worker-url" placeholder="https://your-worker.workers.dev" oninput="saveSettings()">
+      </div>
+      <div class="settings-note">
+        Staff list syncs to Cloudflare KV so it stays the same on every browser and device. Uses your existing Worker — just add the <strong style="color:var(--accent)">/payroll-staff</strong> route (see README).
+      </div>
+    </div>
+
+    <div class="settings-section">
       <h4>Microsoft Azure Credentials</h4>
       <div class="settings-row">
         <label>Client ID (Application ID)</label>
@@ -537,6 +548,41 @@ function save(){
   localStorage.setItem('pr2_emps',  JSON.stringify(employees));
   localStorage.setItem('pr2_weeks', JSON.stringify(weekData));
   localStorage.setItem('pr2_tpls',  JSON.stringify(templates));
+}
+
+// ═══════════════════════════════════════
+//  CLOUDFLARE KV — STAFF SYNC
+//  Staff list syncs to KV so it survives
+//  across all browsers and devices.
+// ═══════════════════════════════════════
+const KV_WORKER_URL = localStorage.getItem('pr2_worker_url')
+  || 'https://anthropic-proxy.imluoai.workers.dev';
+
+// Push current employees to KV (called after any staff change)
+async function kvPushStaff(){
+  const url = (localStorage.getItem('pr2_worker_url')||KV_WORKER_URL).replace(/\/$/,'');
+  try{
+    await fetch(`${url}/payroll-staff`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(employees)
+    });
+  } catch(e){ /* silent — local data is always source of truth */ }
+}
+
+// Pull staff from KV — called on page load
+async function kvPullStaff(){
+  const url = (localStorage.getItem('pr2_worker_url')||KV_WORKER_URL).replace(/\/$/,'');
+  try{
+    const res = await fetch(`${url}/payroll-staff`);
+    if(!res.ok) return;
+    const data = await res.json();
+    if(!Array.isArray(data)||!data.length) return;
+    // KV is source of truth — replace local staff list
+    employees = data;
+    localStorage.setItem('pr2_emps', JSON.stringify(employees));
+    render();
+  } catch(e){ /* offline or Worker not updated yet — use local */ }
 }
 
 // ═══════════════════════════════════════
@@ -687,7 +733,7 @@ function setField(empId,di,field,val){
 }
 function updateEmp(id,field,val){
   const e=employees.find(e=>e.id===id); if(!e) return;
-  e[field]=val; save();
+  e[field]=val; save(); kvPushStaff();
   if(field==='name'){const av=document.querySelector(`#card-${id} .emp-avatar`);if(av)av.textContent=val.charAt(0).toUpperCase();}
   renderSummary(); updateStickyBar();
   if(field==='rate') refreshFooter(id);
@@ -721,14 +767,14 @@ function deleteEmp(id){
   const emp=employees.find(e=>e.id===id);
   showConfirm('Remove Employee?',`"${emp?.name}" will be permanently removed from all weeks.`,'Remove','btn-confirm-red',()=>{
     employees=employees.filter(e=>e.id!==id);
-    save(); renderGrid(); renderSummary(); updateStickyBar();
+    save(); kvPushStaff(); renderGrid(); renderSummary(); updateStickyBar();
   });
 }
 function addEmployee(){
   const used=employees.map(e=>e.color);
   const c=[0,1,2,3,4,5].find(x=>!used.includes(x))??employees.length%6;
   employees.push({id:Date.now(),name:`Employee ${employees.length+1}`,role:'Part-time',rate:15.00,color:c});
-  save(); renderGrid(); renderSummary(); updateStickyBar();
+  save(); kvPushStaff(); renderGrid(); renderSummary(); updateStickyBar();
 }
 
 // ═══════════════════════════════════════
@@ -1078,21 +1124,26 @@ function render(){
   updateWeekDisplay(); renderGrid(); renderSummary(); renderMonthly(); updateStickyBar();
 }
 render();
+// Pull staff from KV silently on load — re-renders if KV has newer data
+kvPullStaff();
 
 // ═══════════════════════════════════════
 //  SETTINGS
 // ═══════════════════════════════════════
 function openSettings(){
-  document.getElementById('s-client-id').value = localStorage.getItem('pr2_client_id')||'';
-  document.getElementById('s-tenant-id').value  = localStorage.getItem('pr2_tenant_id')||'';
+  document.getElementById('s-worker-url').value = localStorage.getItem('pr2_worker_url')||'';
+  document.getElementById('s-client-id').value  = localStorage.getItem('pr2_client_id')||'';
+  document.getElementById('s-tenant-id').value   = localStorage.getItem('pr2_tenant_id')||'';
   updateOdStatusUI();
   document.getElementById('settings-modal').classList.add('open');
 }
 function closeSettings(){ document.getElementById('settings-modal').classList.remove('open'); }
 function saveSettings(){
+  const workerUrl = document.getElementById('s-worker-url').value.trim();
+  if(workerUrl) localStorage.setItem('pr2_worker_url', workerUrl);
   localStorage.setItem('pr2_client_id', document.getElementById('s-client-id').value.trim());
   localStorage.setItem('pr2_tenant_id',  document.getElementById('s-tenant-id').value.trim());
-  _msalInstance = null; // force re-create with new credentials
+  _msalInstance = null;
 }
 function updateOdStatusUI(){
   const acct = localStorage.getItem('pr2_od_account');
@@ -1252,7 +1303,159 @@ function buildExcelRows(){
   return rows;
 }
 
-// ─── Core save to OneDrive Excel via SheetJS ───
+// ═══════════════════════════════════════
+//  XLSX BUILDER — hand-crafted, no SheetJS
+//  An .xlsx is a ZIP of XML files. We build each part manually
+//  so Excel 365 gets a perfectly compliant file every time.
+// ═══════════════════════════════════════
+
+// Load JSZip on demand (small, reliable, no compatibility issues)
+let _jszipPromise = null;
+function loadJSZip(){
+  if(!_jszipPromise){
+    _jszipPromise = new Promise((resolve,reject)=>{
+      if(window.JSZip){ resolve(window.JSZip); return; }
+      const s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+      s.onload =()=>resolve(window.JSZip);
+      s.onerror=()=>reject(new Error('JSZip failed to load.'));
+      document.head.appendChild(s);
+    });
+  }
+  return _jszipPromise;
+}
+
+// Escape XML special characters
+function xmlEsc(v){
+  return String(v??'')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&apos;');
+}
+
+// Convert column index (0-based) to Excel letter (A, B, ... Z, AA ...)
+function colLetter(n){
+  let s='';
+  for(n++;n>0;n=Math.floor((n-1)/26)) s=String.fromCharCode((n-1)%26+65)+s;
+  return s;
+}
+
+// Build a complete .xlsx Blob from a 2D array of rows
+// numericCols = Set of 0-based column indexes that should be numeric cells
+async function buildXlsxBlob(rows, sheetName='Payroll', numericCols=new Set()){
+  const JSZip = await loadJSZip();
+
+  // ── Build shared strings table ──
+  const strings=[], strIndex={};
+  function si(v){
+    const s=String(v??'');
+    if(strIndex[s]===undefined){ strIndex[s]=strings.length; strings.push(s); }
+    return strIndex[s];
+  }
+
+  // ── Build sheet XML ──
+  const COL_WIDTHS=[14,14,16,12,6,10,12,10,10,8,8,8,10,10,8,12,30];
+  let sheetXml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  sheetXml+=`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`;
+
+  // Column widths
+  sheetXml+='<cols>';
+  COL_WIDTHS.forEach((w,i)=>{
+    sheetXml+=`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`;
+  });
+  sheetXml+='</cols>';
+
+  // Freeze first row
+  sheetXml+='<sheetViews><sheetView tabSelected="1" workbookViewId="0">';
+  sheetXml+='<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>';
+  sheetXml+='</sheetView></sheetViews>';
+
+  sheetXml+='<sheetData>';
+  rows.forEach((row,ri)=>{
+    sheetXml+=`<row r="${ri+1}">`;
+    row.forEach((val,ci)=>{
+      const cellRef=`${colLetter(ci)}${ri+1}`;
+      const isNum = ri>0 && numericCols.has(ci) && val!=='' && val!==null && val!==undefined && !isNaN(Number(val));
+      if(isNum){
+        sheetXml+=`<c r="${cellRef}" t="n"><v>${Number(val)}</v></c>`;
+      } else {
+        const idx=si(val);
+        sheetXml+=`<c r="${cellRef}" t="s"><v>${idx}</v></c>`;
+      }
+    });
+    sheetXml+='</row>';
+  });
+  sheetXml+='</sheetData></worksheet>';
+
+  // ── Build shared strings XML ──
+  let sstXml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  sstXml+=`<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${strings.length}" uniqueCount="${strings.length}">`;
+  strings.forEach(s=>{ sstXml+=`<si><t xml:space="preserve">${xmlEsc(s)}</t></si>`; });
+  sstXml+='</sst>';
+
+  // ── Static required XML parts ──
+  const contentTypes=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`;
+
+  const relsRoot=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+
+  const workbook=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="${xmlEsc(sheetName)}" sheetId="1" r:id="rId1"/>
+  </sheets>
+</workbook>`;
+
+  const wbRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+
+  const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts><font><sz val="11"/><name val="Calibri"/></font></fonts>
+  <fills><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
+  <borders><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>
+</styleSheet>`;
+
+  // ── Assemble ZIP ──
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', contentTypes);
+  zip.file('_rels/.rels',         relsRoot);
+  zip.file('xl/workbook.xml',     workbook);
+  zip.file('xl/_rels/workbook.xml.rels', wbRels);
+  zip.file('xl/worksheets/sheet1.xml',   sheetXml);
+  zip.file('xl/sharedStrings.xml',       sstXml);
+  zip.file('xl/styles.xml',              styles);
+
+  const blob = await zip.generateAsync({
+    type:'blob',
+    mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    compression:'DEFLATE',
+    compressionOptions:{level:6}
+  });
+  return blob;
+}
+
+// ─── Save to OneDrive — no external Excel library needed ───
 async function saveToExcel(){
   const btn = document.getElementById('excel-btn');
   btn.classList.add('loading'); btn.textContent='⏳ Saving...';
@@ -1264,90 +1467,75 @@ async function saveToExcel(){
       return;
     }
 
-    // Load SheetJS on demand
-    const XLSX = await loadSheetJS();
-    const token = await getOdToken();
-    const filePath = `${OD_FOLDER}/${OD_FILE}`;
+    const token     = await getOdToken();
+    const filePath  = `${OD_FOLDER}/${OD_FILE}`;
     const graphBase = 'https://graph.microsoft.com/v1.0/me';
-    const authHdr = { 'Authorization': 'Bearer ' + token };
+    const authHdr   = {'Authorization':'Bearer '+token};
 
     const HEADER = ['Week Starting','Pay Date','Employee','Role','$/hr','Day','Date',
       'Clock In','Clock Out','Break (min)','Net Hrs','OT Hrs','Daily Pay ($)',
       'Wk Reg Hrs','Wk OT Hrs','Wk Total Pay ($)','Notes'];
 
-    let wb, ws, existingRows = [];
+    // Numeric column indexes (0-based)
+    const NUM_COLS = new Set([4,9,10,11,12,13,14,15]);
 
-    // ── Step 1: Try to download existing file ──
-    const dlRes = await fetch(`${graphBase}/drive/root:${filePath}:/content`, {headers: authHdr});
-
+    // ── Fetch existing rows if file exists ──
+    let existingRows = [];
+    const dlRes = await fetch(`${graphBase}/drive/root:${filePath}:/content`,{headers:authHdr});
     if(dlRes.ok){
-      // File exists — parse it and extract existing rows
-      const arrayBuf = await dlRes.arrayBuffer();
-      wb = XLSX.read(new Uint8Array(arrayBuf), {type:'array'});
-      const wsName = wb.SheetNames.includes('Payroll') ? 'Payroll' : wb.SheetNames[0];
-      ws = wb.Sheets[wsName];
-      // Get all rows including header
-      existingRows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
-      // Remove old header if present so we re-add it cleanly
-      if(existingRows.length && existingRows[0][0]==='Week Starting') existingRows.shift();
-    } else {
-      // File doesn't exist — ensure folder exists then create fresh workbook
+      // File exists — we need to read its rows
+      // Since we're building our own format, parse the raw XML from the ZIP
+      try{
+        const JSZip = await loadJSZip();
+        const buf   = await dlRes.arrayBuffer();
+        const zip   = await JSZip.loadAsync(buf);
+        const sheetXmlStr = await zip.file('xl/worksheets/sheet1.xml').async('string');
+        const sstStr      = zip.file('xl/sharedStrings.xml')
+          ? await zip.file('xl/sharedStrings.xml').async('string') : '';
+
+        // Parse shared strings
+        const sst=[];
+        sstStr.replace(/<t[^>]*>([^<]*)<\/t>/g,(_,t)=>{ sst.push(t.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'")); });
+
+        // Parse rows
+        const rowMatches=[...sheetXmlStr.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)];
+        rowMatches.forEach((rm,ri)=>{
+          if(ri===0) return; // skip header
+          const cells=[];
+          const cellMatches=[...rm[1].matchAll(/<c r="([^"]+)"[^>]*t="([^"]*)"[^>]*>(?:<v>([^<]*)<\/v>)?/g)];
+          cellMatches.forEach(cm=>{
+            const t=cm[2], v=cm[3]||'';
+            cells.push(t==='s' ? (sst[parseInt(v)]||'') : v);
+          });
+          if(cells.length) existingRows.push(cells);
+        });
+      } catch(e){ existingRows=[]; } // if parse fails just start fresh
+    } else if(dlRes.status===404){
       await ensureOdFolder(token, OD_FOLDER);
-      wb = XLSX.utils.book_new();
-      existingRows = [];
-    }
-
-    // ── Step 2: Build full sheet = header + existing + new rows ──
-    const allRows = [HEADER, ...existingRows, ...newRows];
-    ws = XLSX.utils.aoa_to_sheet(allRows);
-
-    // Column widths for readability
-    ws['!cols'] = [14,14,16,12,6,10,12,10,10,10,8,8,10,10,8,12,20].map(w=>({wch:w}));
-
-    // Re-attach or add Payroll sheet
-    if(wb.SheetNames.includes('Payroll')){
-      wb.Sheets['Payroll'] = ws;
     } else {
-      XLSX.utils.book_append_sheet(wb, ws, 'Payroll');
+      throw new Error(`OneDrive error ${dlRes.status}`);
     }
 
-    // ── Step 3: Write to binary and upload ──
-    const wbOut = XLSX.write(wb, {bookType:'xlsx', type:'array'});
-    const blob  = new Blob([wbOut], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    // ── Build and upload ──
+    const allRows = [HEADER, ...existingRows, ...newRows];
+    const blob    = await buildXlsxBlob(allRows, 'Payroll', NUM_COLS);
 
     const upRes = await fetch(`${graphBase}/drive/root:${filePath}:/content`,{
-      method: 'PUT',
-      headers: { 'Authorization': 'Bearer ' + token,
-                 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+      method:'PUT',
+      headers:{...authHdr,'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},
       body: blob
     });
     if(!upRes.ok) throw new Error(`Upload failed: ${upRes.status} ${upRes.statusText}`);
 
     showToast(`✓ Saved ${newRows.length} row${newRows.length!==1?'s':''} to OneDrive Excel!`);
     btn.textContent='✓ Saved!';
-    setTimeout(()=>{ btn.textContent='📊 Save to Excel'; }, 3000);
+    setTimeout(()=>{ btn.textContent='📊 Save to Excel'; },3000);
 
   } catch(e){
-    showToast('❌ ' + e.message);
+    showToast('❌ '+e.message);
     btn.textContent='📊 Save to Excel';
   }
   btn.classList.remove('loading');
-}
-
-// Load SheetJS on demand from CDN
-let _xlsxPromise = null;
-function loadSheetJS(){
-  if(!_xlsxPromise){
-    _xlsxPromise = new Promise((resolve, reject)=>{
-      if(window.XLSX){ resolve(window.XLSX); return; }
-      const s = document.createElement('script');
-      s.src = 'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';
-      s.onload  = ()=> resolve(window.XLSX);
-      s.onerror = ()=> reject(new Error('SheetJS failed to load. Check internet connection.'));
-      document.head.appendChild(s);
-    });
-  }
-  return _xlsxPromise;
 }
 
 // Ensure folder path exists on OneDrive
