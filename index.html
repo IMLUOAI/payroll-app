@@ -581,6 +581,7 @@ async function saveStaff(){
     setSyncStatus('ok',`Synced ✓  ${employees.length} staff`);
   } catch(e){
     setSyncStatus('error',`Cloud sync failed — saved locally only`);
+    showToast(`⚠️ Cloud sync failed — staff saved locally only. Check your Worker URL in ⚙️ Settings.`);
   }
 }
 
@@ -818,11 +819,11 @@ function deleteEmp(id){
     renderGrid(); renderSummary(); updateStickyBar();
   });
 }
-function addEmployee(){
+async function addEmployee(){
   const used=employees.map(e=>e.color);
   const c=[0,1,2,3,4,5].find(x=>!used.includes(x))??employees.length%6;
   employees.push({id:Date.now(),name:`Employee ${employees.length+1}`,role:'Part-time',rate:15.00,color:c});
-  saveStaff(); renderGrid(); renderSummary(); updateStickyBar();
+  await saveStaff(); renderGrid(); renderSummary(); updateStickyBar();
 }
 
 // ═══════════════════════════════════════
@@ -1138,7 +1139,7 @@ function buildCSV(allWeeks=false){
     const monS=mon.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     const friS=fri.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     let gW=0;
-    employees.forEach(emp=>{const r=calcWage(emp,wk);gW+=r.wage;const notes=weekData[wk]?._notes?.[emp.id]||'';rows.push([monS,emp.name,emp.name,r.hours.toFixed(2),r.ot.toFixed(2),r.wage.toFixed(2),notes].map(esc).join(','));});
+    employees.forEach(emp=>{const r=calcWage(emp,wk);gW+=r.wage;const notes=weekData[wk]?._notes?.[emp.id]||'';rows.push([monS,friS,emp.name,r.hours.toFixed(2),r.ot.toFixed(2),r.wage.toFixed(2),notes].map(esc).join(','));});
     rows.push([friS,'TOTAL PAYROLL','','','','$'+gW.toFixed(2),''].map(esc).join(','));
     rows.push('');
   });
@@ -1325,7 +1326,7 @@ async function getOdToken(){
   }
 }
 
-// ─── Build the worksheet rows for this week ───
+// ─── Build the worksheet rows for this week (QuickBooks Online Payroll format) ───
 function buildExcelRows(){
   const wk = weekKey();
   const mon = new Date(wk+'T00:00:00');
@@ -1334,31 +1335,25 @@ function buildExcelRows(){
   const friS = fri.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const rows = [];
   employees.forEach(emp=>{
-    const wRes = calcWage(emp,wk);
+    const wRes  = calcWage(emp,wk);
     const notes = weekData[wk]?._notes?.[emp.id]||'';
-    let wrote = false;
-    DAYS.forEach((day,di)=>{
-      const dd = weekData[wk]?.[emp.id]?.[di]||{}; if(!dd.active) return;
-      const date = new Date(mon); date.setDate(mon.getDate()+di);
-      const dateS = date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-      const bm = parseFloat(dd.breakMins)||0;
-      const h  = netHours(dd.start,dd.end,bm);
-      const dOT  = Math.max(0,h-8), dReg = Math.min(h,8), rate = parseFloat(emp.rate)||0;
-      rows.push([
-        monS, friS, emp.name, emp.role, parseFloat(emp.rate),
-        day, dateS, dd.start||'', dd.end||'', bm,
-        parseFloat(h.toFixed(3)), parseFloat(dOT.toFixed(3)),
-        parseFloat((dReg*rate+dOT*rate*1.5).toFixed(2)),
-        !wrote ? parseFloat(wRes.reg.toFixed(2))  : '',
-        !wrote ? parseFloat(wRes.ot.toFixed(2))   : '',
-        !wrote ? parseFloat(wRes.wage.toFixed(2)) : '',
-        !wrote ? notes : ''
-      ]);
-      wrote = true;
-    });
-    if(!wrote && notes){
-      rows.push([monS,friS,emp.name,emp.role,parseFloat(emp.rate),'—','—','—','—',0,0,0,0,0,0,0,notes]);
-    }
+    if(wRes.hours === 0 && !notes) return;
+    const rate   = parseFloat(emp.rate)||0;
+    const regPay = parseFloat((wRes.reg * rate).toFixed(2));
+    const otPay  = parseFloat((wRes.ot  * rate * 1.5).toFixed(2));
+    rows.push([
+      emp.name,
+      monS,
+      friS,
+      friS,
+      parseFloat(wRes.reg.toFixed(2)),
+      parseFloat(wRes.ot.toFixed(2)),
+      rate,
+      regPay,
+      otPay,
+      parseFloat(wRes.wage.toFixed(2)),
+      notes
+    ]);
   });
   return rows;
 }
@@ -1416,7 +1411,7 @@ async function buildXlsxBlob(rows, sheetName='Payroll', numericCols=new Set()){
   }
 
   // ── Build sheet XML ──
-  const COL_WIDTHS=[14,14,16,12,6,10,12,10,10,8,8,8,10,10,8,12,30];
+  const COL_WIDTHS=[22,14,14,14,13,14,11,12,12,12,35];
   let sheetXml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
   sheetXml+=`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
     xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`;
@@ -1532,11 +1527,11 @@ async function saveToExcel(){
     const graphBase = 'https://graph.microsoft.com/v1.0/me';
     const authHdr   = {'Authorization':'Bearer '+token};
 
-    const HEADER = ['Week Starting','Pay Date','Employee','Role','$/hr','Day','Date',
-      'Clock In','Clock Out','Break (min)','Net Hrs','OT Hrs','Daily Pay ($)',
-      'Wk Reg Hrs','Wk OT Hrs','Wk Total Pay ($)','Notes'];
+    const HEADER = ['Employee Name','Pay Period Start','Pay Period End','Pay Date',
+      'Regular Hours','Overtime Hours','Hourly Rate',
+      'Regular Pay','Overtime Pay','Gross Pay','Notes'];
 
-    const NUM_COLS = new Set([4,9,10,11,12,13,14,15]);
+    const NUM_COLS = new Set([4,5,6,7,8,9]);
 
     // ── Fetch existing rows if file exists ──
     let existingRows = [];
@@ -1585,6 +1580,13 @@ async function saveToExcel(){
       throw new Error('File is locked — close it in Excel first, then try again.');
     } else {
       throw new Error(`OneDrive error ${dlRes.status}`);
+    }
+
+    // ── Deduplicate: remove existing rows that match the same employee + pay period
+    //    being saved now, so re-saving a week replaces rather than stacks rows.
+    if(newRows.length){
+      const newKeys = new Set(newRows.map(r => String(r[0])+'|'+String(r[1])));
+      existingRows = existingRows.filter(r => !newKeys.has(String(r[0])+'|'+String(r[1])));
     }
 
     // ── Build and upload ──
