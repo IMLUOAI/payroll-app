@@ -1019,6 +1019,59 @@
         color: var(--accent);
       }
 
+      /* ARCHIVED EMPLOYEES SECTION */
+      .archived-section {
+        margin: 6px 0 4px;
+      }
+      .archived-toggle {
+        background: none;
+        border: 1px dashed var(--border);
+        color: var(--muted);
+        font-family: "DM Mono", monospace;
+        font-size: 0.64rem;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        padding: 8px 14px;
+        border-radius: 5px;
+        cursor: pointer;
+        width: 100%;
+        text-align: left;
+        transition: all 0.2s;
+      }
+      .archived-toggle:hover { border-color: var(--muted); color: var(--text); }
+      .archived-list {
+        display: none;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 8px;
+        padding: 10px 12px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      .archived-list.open { display: flex; }
+      .archived-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+      .archived-row .archived-name { flex: 1; font-family: "DM Mono", monospace; }
+      .archived-row .archived-role { font-size: 0.68rem; }
+      .restore-btn {
+        background: rgba(96, 184, 240, 0.1);
+        border: 1px solid rgba(96, 184, 240, 0.3);
+        color: var(--blue);
+        font-family: "DM Mono", monospace;
+        font-size: 0.62rem;
+        padding: 4px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .restore-btn:hover { background: rgba(96, 184, 240, 0.2); }
+
       /* AVATAR COLORS */
       .color-0 {
         background: rgba(245, 200, 66, 0.15);
@@ -1760,6 +1813,7 @@
 
     <div class="main">
       <div class="employees-grid" id="emp-grid"></div>
+      <div class="archived-section" id="archived-section"></div>
       <button class="add-emp-btn" onclick="addEmployee()">
         + Add Employee
       </button>
@@ -2145,6 +2199,7 @@
             role: e.role || "Part-time",
             rate: parseFloat(e.rate) || 15.0,
             color: e.color ?? i % 6,
+            ...(e.archived ? { archived: true } : {}),
           }));
           localStorage.setItem("pr2_emps", JSON.stringify(employees));
           setSyncStatus("ok", `${employees.length} staff loaded from cloud`);
@@ -2273,9 +2328,10 @@
         ).textContent = `Pay period: ${fmt(dd[0])} – ${fmt(
           dd[4]
         )}  ·  Payday: ${fmt(dd[4])}`;
+        const activeCount = employees.filter((e) => !e.archived).length;
         document.getElementById("emp-count-label").textContent = `${
-          employees.length
-        } employee${employees.length !== 1 ? "s" : ""} · Friday`;
+          activeCount
+        } employee${activeCount !== 1 ? "s" : ""} · Friday`;
       }
       function changeWeek(d) {
         const cur = getMonFromAnchor();
@@ -2546,9 +2602,10 @@
       //  EMPLOYEE ACTIONS
       // ═══════════════════════════════════════
       function clearEmp(id) {
+        const emp = employees.find((e) => e.id === id);
         showConfirm(
           "Clear This Week?",
-          "All entries for this employee this week will be removed.",
+          `All time entries for "${emp?.name || 'this employee'}" this week will be reset to zero.`,
           "Clear",
           "btn-confirm-red",
           () => {
@@ -2561,24 +2618,63 @@
             renderCard(id);
             renderSummary();
             updateStickyBar();
+            showToast(`✓ Week cleared for ${emp?.name || 'employee'}.`);
           }
         );
       }
-      function deleteEmp(id) {
+      function archiveEmp(id) {
         const emp = employees.find((e) => e.id === id);
         showConfirm(
-          "Remove Employee?",
-          `"${emp?.name}" will be permanently removed.`,
-          "Remove",
+          "Archive Employee?",
+          `"${emp?.name}" will be archived and hidden from the weekly grid. Their payroll history is fully preserved in Excel. You can restore them any time from the Archived Staff section.`,
+          "Archive",
           "btn-confirm-red",
           async () => {
-            employees = employees.filter((e) => e.id !== id);
+            const target = employees.find((e) => e.id === id);
+            if (target) target.archived = true;
             await saveStaff();
             renderGrid();
+            renderArchived();
             renderSummary();
             updateStickyBar();
+            showToast(`📦 ${target?.name || 'Employee'} archived.`);
           }
         );
+      }
+      function restoreEmp(id) {
+        const target = employees.find((e) => e.id === id);
+        if (!target) return;
+        target.archived = false;
+        saveStaff();
+        renderGrid();
+        renderArchived();
+        renderSummary();
+        updateStickyBar();
+        showToast(`✓ ${target.name} restored.`);
+      }
+      function renderArchived() {
+        const section = document.getElementById("archived-section");
+        if (!section) return;
+        const archived = employees.filter((e) => e.archived);
+        if (!archived.length) {
+          section.innerHTML = "";
+          return;
+        }
+        const isOpen = section.querySelector(".archived-list.open");
+        section.innerHTML = `
+          <button class="archived-toggle" onclick="this.nextElementSibling.classList.toggle('open')">
+            📦 Archived Staff (${archived.length}) ▸
+          </button>
+          <div class="archived-list${isOpen ? ' open' : ''}">
+            ${archived.map(e => `
+              <div class="archived-row">
+                <div class="emp-avatar color-${e.color}" style="width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;flex-shrink:0">${(e.name||'?').charAt(0).toUpperCase()}</div>
+                <span class="archived-name">${e.name}</span>
+                <span class="archived-role">${e.role}</span>
+                <button class="restore-btn" onclick="restoreEmp(${e.id})">↩ Restore</button>
+              </div>
+            `).join('')}
+          </div>`;
       }
       async function addEmployee() {
         const used = employees.map((e) => e.color);
@@ -2821,7 +2917,7 @@
         const grid = document.getElementById("emp-grid");
         grid.innerHTML = "";
         const dates = dayDates();
-        employees.forEach((emp) => {
+        employees.filter((emp) => !emp.archived).forEach((emp) => {
           // Sanitize fields — guard against missing data from KV
           emp.name = emp.name || `Employee ${emp.id}`;
           emp.role = emp.role || "Part-time";
@@ -2904,9 +3000,9 @@
           emp.id
         },null)">⚡ Tpl</button>
         <button class="icon-btn" onclick="clearEmp(${emp.id})">Clear</button>
-        <button class="icon-btn danger" onclick="deleteEmp(${
+        <button class="icon-btn danger" onclick="archiveEmp(${
           emp.id
-        })">✕ Del</button>
+        })">📦 Archive</button>
       </div>`;
           card.appendChild(ft);
           grid.appendChild(card);
@@ -2925,7 +3021,7 @@
           gW = 0,
           gB = 0;
         const cols = ["accent", "blue", "green", "red", "purple"];
-        employees.forEach((emp) => {
+        employees.filter((emp) => !emp.archived).forEach((emp) => {
           const r = calcWage(emp, wk),
             notes = weekData[wk]?._notes?.[emp.id] || "";
           gH += r.hours;
@@ -2990,7 +3086,7 @@
         s("sb-total", "$" + gW.toFixed(2));
         s("sb-hrs", gH.toFixed(2));
         s("sb-ot", gO > 0 ? gO.toFixed(2) : "0.00");
-        s("sb-emps", employees.length);
+        s("sb-emps", employees.filter((e) => !e.archived).length);
       }
 
       // ═══════════════════════════════════════
@@ -3297,6 +3393,7 @@
       function render() {
         updateWeekDisplay();
         renderGrid();
+        renderArchived();
         renderSummary();
         renderMonthly();
         updateStickyBar();
@@ -3822,6 +3919,16 @@
                   );
                 });
 
+                // Helper: convert column letter(s) to 0-based index (A→0, B→1, …, K→10)
+                function colLetterToIdx(ref) {
+                  const letters = ref.match(/^([A-Z]+)/)[1];
+                  let idx = 0;
+                  for (let i = 0; i < letters.length; i++) {
+                    idx = idx * 26 + (letters.charCodeAt(i) - 64);
+                  }
+                  return idx - 1;
+                }
+
                 // Parse rows — skip row 1 (header)
                 const rowMatches = [
                   ...sheetXmlStr.matchAll(
@@ -3830,18 +3937,22 @@
                 ];
                 rowMatches.forEach((rm) => {
                   if (parseInt(rm[1]) === 1) return;
-                  const cells = [];
+                  // Pre-fill 11 empty slots so sparse rows align correctly
+                  const cells = new Array(11).fill("");
                   const cellMatches = [
                     ...rm[2].matchAll(
                       /<c\s[^>]*\br="([A-Z]+\d+)"([^>]*)>(?:[\s\S]*?<v>([\s\S]*?)<\/v>)?[\s\S]*?<\/c>/g
                     ),
                   ];
                   cellMatches.forEach((cm) => {
+                    const colIdx = colLetterToIdx(cm[1]);
                     const isStr = cm[2].includes('t="s"');
                     const v = cm[3] || "";
-                    cells.push(isStr ? sst[parseInt(v)] || "" : v);
+                    if (colIdx >= 0 && colIdx < cells.length) {
+                      cells[colIdx] = isStr ? sst[parseInt(v)] || "" : v;
+                    }
                   });
-                  if (cells.length) existingRows.push(cells);
+                  if (cellMatches.length) existingRows.push(cells);
                 });
               }
             } catch (parseErr) {
