@@ -42,10 +42,9 @@ A lightweight, mobile-first weekly payroll management application built as a sin
 - Prev/Next week buttons and "This Week" shortcut
 - **Swipe left/right** on mobile to navigate between weeks
 - Monthly overview panel showing payroll totals for every week in the month
-- **🔒 Past-week read-only lock** — navigating to any previous week automatically locks all inputs to prevent accidental edits; a blue banner is shown with an "Unlock to Edit" button to override intentionally (session-only, re-locks on refresh)
 
 ### Export & Reporting
-- **📊 Save to Excel** — appends weekly data to a master `.xlsx` file in OneDrive, built with professional formatting: navy blue header row, alternating light-blue data rows, Arial font, `#,##0.00` number formatting on all pay/hour columns, and thin borders throughout
+- **📊 Save to Excel** — appends weekly data to a master Excel file in OneDrive via Microsoft Graph API
 - **↑ Share CSV** — exports current week as CSV and routes through the iOS Share Sheet
 - **↓ All Weeks CSV** — exports the full payroll history across all recorded weeks
 - Print-friendly layout
@@ -153,8 +152,6 @@ After entering the week's data, tap **📊 Save to Excel** in the Weekly Payroll
 - Tap **This Week** to return to the current week instantly
 - Tap any week in the **Monthly Overview** panel to jump directly to it
 
-> **Past-week lock:** When you navigate to a previous week, all inputs are automatically disabled and a 🔒 banner appears. Tap **Unlock to Edit** on the banner if you need to make a correction. The lock resets when you refresh the page.
-
 ---
 
 ## OneDrive & Azure Setup
@@ -224,9 +221,7 @@ Credentials are saved locally to your device and persist across sessions. You wi
 | Fonts | Syne (headings), DM Mono (data) via Google Fonts |
 | Data storage | Browser `localStorage` — persists per device, per origin |
 | Authentication | MSAL.js 2.x (`@azure/msal-browser`) via CDN, popup flow |
-| Excel generation | Hand-crafted OOXML `.xlsx` via JSZip (loaded on demand) — no SheetJS or external Excel library; full styles.xml with 6 cell XFs (header, data plain/alt, numeric plain/alt), custom number formats, and thin borders |
-| Excel upload | Microsoft Graph API — `Files.ReadWrite` scope, PUT to `/me/drive/root:/path:/content` |
-| Past-week safety | Read-only lock via CSS `pointer-events: none` on `#emp-grid.past-locked`; per-session unlock set (`unlockedPastWeeks`) |
+| Excel integration | Microsoft Graph API — `Files.ReadWrite` scope, range PATCH |
 | Offline support | Service Worker registered via Blob URL, caches Google Fonts |
 | PWA | Web App Manifest (inline data URI), apple-touch-icon, standalone display mode |
 | iOS support | `viewport-fit=cover`, `env(safe-area-inset-*)`, `-webkit-fill-available` |
@@ -238,19 +233,11 @@ Credentials are saved locally to your device and persist across sessions. You wi
 ```
 User taps "Save to Excel"
   → MSAL acquireTokenSilent (falls back to popup if expired)
-  → Graph: GET /me/drive/root:/Double Sided ISCM/Payroll/Payroll_Master.xlsx:/content
-      → 404: ensure OneDrive folder exists (create if needed)
-      → 200: parse existing .xlsx via JSZip
-              ├─ Extract sharedStrings.xml → build string lookup table
-              └─ Extract sheet1.xml → parse all data rows (skip header row 1)
-  → Deduplicate: remove existing rows that match the same employee + pay period start
-     (re-saving a week replaces rather than stacks rows)
-  → Build new .xlsx blob via hand-crafted OOXML:
-      ├─ sharedStrings.xml  — shared string table
-      ├─ styles.xml         — 6-XF professional style sheet (header, plain/alt data, numeric)
-      ├─ sheet1.xml         — frozen header row + styled data rows
-      └─ workbook.xml + relationships
-  → Graph: PUT .xlsx blob → /me/drive/root:/path:/content
+  → Graph: GET /me/drive/root:/Double Sided ISCM/Payroll/Payroll_Master.xlsx
+      → 404: create folder structure, upload blank .xlsx, create "Payroll" sheet + header row
+      → 200: open existing file
+  → Graph: GET usedRange → determine next empty row
+  → Graph: PATCH range → append this week's rows
   → Toast confirmation
 ```
 
@@ -258,9 +245,8 @@ User taps "Save to Excel"
 
 ```
 repository/
-├── index.html              # Entire application — HTML, CSS, JavaScript in one file
-├── msal-browser.min.js     # MSAL.js bundled locally (no CDN dependency for auth)
-└── README.md               # This document
+├── index.html        # Entire application — HTML, CSS, JavaScript in one file
+└── README.md         # This document
 ```
 
 ---
