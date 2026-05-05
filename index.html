@@ -1430,19 +1430,24 @@ async function buildXlsxBlob(rows, sheetName='Payroll', numericCols=new Set()){
 
   sheetXml+='<sheetData>';
   rows.forEach((row,ri)=>{
-    sheetXml+=`<row r="${ri+1}">`;
+    // Header row gets extra height; data rows alternate fill
+    const rowAttrs = ri===0 ? ' ht="28" customHeight="1"' : '';
+    sheetXml+=`<row r="${ri+1}"${rowAttrs}>`;
     row.forEach((val,ci)=>{
       const cellRef=`${colLetter(ci)}${ri+1}`;
       // In OOXML: numeric cells have NO t attribute, string cells use t="s"
       const isNum = ri>0 && numericCols.has(ci)
         && val!=='' && val!==null && val!==undefined && !isNaN(Number(val));
+      // XF style: 1=header, 2/3=string plain/alt, 4/5=numeric plain/alt
+      const isAlt = ri>0 && (ri-1)%2===1;
+      const sIdx  = ri===0 ? 1 : (isNum ? (isAlt ? 5 : 4) : (isAlt ? 3 : 2));
       if(isNum){
-        // Numeric cell — no t attribute, just <c r=".."><v>number</v></c>
-        sheetXml+=`<c r="${cellRef}"><v>${Number(val)}</v></c>`;
+        // Numeric cell — no t attribute
+        sheetXml+=`<c r="${cellRef}" s="${sIdx}"><v>${Number(val)}</v></c>`;
       } else {
         // String cell — t="s" with shared string index
         const idx=si(val);
-        sheetXml+=`<c r="${cellRef}" t="s"><v>${idx}</v></c>`;
+        sheetXml+=`<c r="${cellRef}" t="s" s="${sIdx}"><v>${idx}</v></c>`;
       }
     });
     sheetXml+='</row>';
@@ -1486,13 +1491,49 @@ async function buildXlsxBlob(rows, sheetName='Payroll', numericCols=new Set()){
   <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>`;
 
+  // ── Professional styles matching Payroll_Cleaned.xlsx standard ──
+  // XF index map:
+  //   0 = default (unused base)
+  //   1 = header  (Arial 10 bold white, blue fill #2F5496, thin border, centered)
+  //   2 = data string, plain row  (Arial 10, no fill, thin border)
+  //   3 = data string, alt row   (Arial 10, light-blue fill #EEF3FB, thin border)
+  //   4 = data numeric, plain row (Arial 10, no fill, thin border, #,##0.00, right-aligned)
+  //   5 = data numeric, alt row  (Arial 10, light-blue fill, thin border, #,##0.00, right-aligned)
   const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts><font><sz val="11"/><name val="Calibri"/></font></fonts>
-  <fills><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
-  <borders><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+  <numFmts count="1">
+    <numFmt numFmtId="164" formatCode="#,##0.00"/>
+  </numFmts>
+  <fonts count="2">
+    <font><sz val="10"/><name val="Arial"/></font>
+    <font><b/><sz val="10"/><name val="Arial"/><color rgb="FFFFFFFF"/></font>
+  </fonts>
+  <fills count="4">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF2F5496"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFEEF3FB"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="2">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border>
+      <left style="thin"><color rgb="FFAAAAAA"/></left>
+      <right style="thin"><color rgb="FFAAAAAA"/></right>
+      <top style="thin"><color rgb="FFAAAAAA"/></top>
+      <bottom style="thin"><color rgb="FFAAAAAA"/></bottom>
+      <diagonal/>
+    </border>
+  </borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>
+  <cellXfs count="6">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="0" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+  </cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
 
   // ── Assemble ZIP ──
