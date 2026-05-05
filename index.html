@@ -55,27 +55,6 @@ header{background:var(--surface);border-bottom:1px solid var(--border);padding:1
 .cal-btn{background:rgba(96,184,240,0.08)!important;border-color:rgba(96,184,240,0.25)!important;color:var(--blue)!important;}
 .week-num{font-size:0.65rem;color:var(--muted);margin-left:2px;}
 
-/* PAST-WEEK LOCK BANNER */
-.past-lock-bar{display:none;margin:10px 22px 0;padding:9px 14px;background:rgba(96,184,240,0.07);border:1px solid rgba(96,184,240,0.28);border-radius:6px;align-items:center;gap:10px;flex-wrap:wrap;}
-.past-lock-bar.show{display:flex;}
-.past-lock-msg{flex:1;font-size:0.65rem;color:var(--blue);letter-spacing:0.04em;}
-.past-lock-msg strong{font-weight:600;}
-.past-unlock-btn{background:rgba(96,184,240,0.13);border:1px solid rgba(96,184,240,0.4);color:var(--blue);font-family:'DM Mono',monospace;font-size:0.64rem;padding:5px 13px;border-radius:4px;cursor:pointer;white-space:nowrap;transition:all 0.15s;letter-spacing:0.04em;}
-.past-unlock-btn:hover{background:rgba(96,184,240,0.25);border-color:var(--blue);}
-/* When locked: disable all time / break / toggle inputs inside the employee grid */
-#emp-grid.past-locked .time-input,
-#emp-grid.past-locked .break-input,
-#emp-grid.past-locked .emp-rate-input{pointer-events:none;opacity:0.35;}
-#emp-grid.past-locked .day-row{pointer-events:none;}
-#emp-grid.past-locked .emp-name-input,
-#emp-grid.past-locked .emp-role-input{pointer-events:none;}
-/* Mute the copy-last-week and clear buttons too */
-#emp-grid.past-locked .icon-btn{pointer-events:none;opacity:0.25;}
-/* Dim Add Employee button */
-body.past-locked .add-emp-btn{pointer-events:none;opacity:0.25;}
-/* Blue left-border accent on week-nav to signal "you are not on the current week" */
-.week-nav.past-week-active{border-left:3px solid var(--blue);padding-left:19px;}
-
 /* MAIN */
 .main{padding:14px 22px;display:flex;flex-direction:column;gap:14px;}
 .employees-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(490px,1fr));gap:13px;}
@@ -362,13 +341,6 @@ body.light .sticky-bar{background:rgba(244,242,237,0.97);}
   <button onclick="changeWeek(1)">Next →</button>
   <button class="cal-btn" onclick="toggleCal()">📅 Pick Week</button>
   <span class="week-num" id="week-num"></span>
-</div>
-
-<!-- Past-week read-only banner -->
-<div class="past-lock-bar" id="past-lock-bar">
-  <span style="font-size:1rem;">🔒</span>
-  <span class="past-lock-msg"><strong>Past week — read only.</strong> Navigate back to prevent accidental edits.</span>
-  <button class="past-unlock-btn" onclick="unlockPastWeek()">Unlock to Edit</button>
 </div>
 
 <!-- Calendar -->
@@ -705,33 +677,6 @@ function changeWeek(d){
   anchorMon=cur; weekOffset=0; render();
 }
 function goToday(){ anchorMon=null; weekOffset=0; render(); }
-
-// ═══════════════════════════════════════
-//  PAST-WEEK READ-ONLY LOCK
-//  Prevents accidental edits to closed pay periods.
-//  Unlocking is per-session and per-week — refreshing re-locks.
-// ═══════════════════════════════════════
-const unlockedPastWeeks = new Set();
-function isPastWeek(){
-  const thisMon = mondayOf(new Date());
-  return getMon() < thisMon;
-}
-function unlockPastWeek(){
-  unlockedPastWeeks.add(weekKey());
-  applyLockState();
-  showToast('⚠️ Past week unlocked — edits will overwrite saved data.');
-}
-function applyLockState(){
-  const locked = isPastWeek() && !unlockedPastWeeks.has(weekKey());
-  // Banner
-  document.getElementById('past-lock-bar').classList.toggle('show', locked);
-  // Grid inputs
-  document.getElementById('emp-grid').classList.toggle('past-locked', locked);
-  // Body flag (for add-emp-btn)
-  document.body.classList.toggle('past-locked', locked);
-  // Week-nav visual accent
-  document.querySelector('.week-nav').classList.toggle('past-week-active', isPastWeek());
-}
 
 // ═══════════════════════════════════════
 //  SWIPE TO CHANGE WEEK
@@ -1232,7 +1177,6 @@ function showToast(msg){
 // ═══════════════════════════════════════
 function render(){
   updateWeekDisplay(); renderGrid(); renderSummary(); renderMonthly(); updateStickyBar();
-  applyLockState();
 }
 render();
 // On a brand new browser with no local staff — pull once from KV
