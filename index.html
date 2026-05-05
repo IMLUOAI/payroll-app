@@ -1019,6 +1019,27 @@
         color: var(--accent);
       }
 
+      /* ARCHIVED CARD — shown in weeks where they have recorded data */
+      .emp-card.archived-card {
+        opacity: 0.72;
+        border-style: dashed;
+      }
+      .emp-card.archived-card .emp-header {
+        opacity: 0.8;
+      }
+      .archived-badge {
+        font-family: "DM Mono", monospace;
+        font-size: 0.58rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        padding: 2px 6px;
+        margin-left: 6px;
+        vertical-align: middle;
+      }
+
       /* ARCHIVED EMPLOYEES SECTION */
       .archived-section {
         margin: 6px 0 4px;
@@ -1170,6 +1191,14 @@
       }
       .toast.show {
         opacity: 1;
+        pointer-events: auto;
+      }
+      .toast-undo {
+        margin-left: 10px;
+        text-decoration: underline;
+        cursor: pointer;
+        opacity: 0.85;
+        -webkit-tap-highlight-color: transparent;
       }
 
       /* MODAL OVERLAY */
@@ -2601,26 +2630,45 @@
       // ═══════════════════════════════════════
       //  EMPLOYEE ACTIONS
       // ═══════════════════════════════════════
+      // ── Undo support for clearEmp ──
+      let _undoClearFn = null, _undoClearTimer = null;
+      function undoClear() {
+        if (!_undoClearFn) return;
+        _undoClearFn();
+        _undoClearFn = null;
+        clearTimeout(_undoClearTimer);
+        document.getElementById("toast").classList.remove("show");
+      }
       function clearEmp(id) {
         const emp = employees.find((e) => e.id === id);
-        showConfirm(
-          "Clear This Week?",
-          `All time entries for "${emp?.name || 'this employee'}" this week will be reset to zero.`,
-          "Clear",
-          "btn-confirm-red",
-          () => {
-            const wk = weekKey();
-            if (weekData[wk]) {
-              delete weekData[wk][id];
-              if (weekData[wk]._notes) delete weekData[wk]._notes[id];
-            }
-            save();
-            renderCard(id);
-            renderSummary();
-            updateStickyBar();
-            showToast(`✓ Week cleared for ${emp?.name || 'employee'}.`);
-          }
-        );
+        const wk = weekKey();
+        // Snapshot current data for undo
+        const prevDays  = weekData[wk]?.[id]   ? JSON.parse(JSON.stringify(weekData[wk][id]))   : null;
+        const prevNotes = weekData[wk]?._notes?.[id] ?? null;
+        // Execute clear immediately — no modal needed
+        if (weekData[wk]) {
+          delete weekData[wk][id];
+          if (weekData[wk]._notes) delete weekData[wk]._notes[id];
+        }
+        save();
+        renderCard(id);
+        renderSummary();
+        updateStickyBar();
+        // Undo callback
+        clearTimeout(_undoClearTimer);
+        _undoClearFn = () => {
+          weekData[wk] ??= {};
+          if (prevDays)  weekData[wk][id] = prevDays;
+          if (prevNotes !== null) { weekData[wk]._notes ??= {}; weekData[wk]._notes[id] = prevNotes; }
+          save();
+          renderCard(id);
+          renderSummary();
+          updateStickyBar();
+          showToast(`↩ Restored ${escH(emp?.name || 'employee')}.`);
+        };
+        _undoClearTimer = setTimeout(() => { _undoClearFn = null; }, 4500);
+        const name = escH(emp?.name || 'Employee');
+        showToast(`✓ ${name} cleared. <span class="toast-undo" onclick="undoClear()">Undo</span>`, true);
       }
       function archiveEmp(id) {
         const emp = employees.find((e) => e.id === id);
@@ -2913,48 +2961,66 @@
       // ═══════════════════════════════════════
       //  RENDER GRID
       // ═══════════════════════════════════════
+      // Helper: does this employee have at least one active day recorded this week?
+      function empHasWeekData(empId, wk) {
+        const wd = weekData[wk]?.[empId];
+        if (!wd) return false;
+        return Object.values(wd).some((d) => d && d.active);
+      }
+
       function renderGrid() {
         const grid = document.getElementById("emp-grid");
         grid.innerHTML = "";
         const dates = dayDates();
-        employees.filter((emp) => !emp.archived).forEach((emp) => {
-          // Sanitize fields — guard against missing data from KV
+        const wk = weekKey();
+
+        // ── Build a card (shared by active and archived-with-data employees) ──
+        function buildCard(emp, isArchived) {
           emp.name = emp.name || `Employee ${emp.id}`;
           emp.role = emp.role || "Part-time";
           emp.rate = emp.rate || 15.0;
           emp.color = emp.color ?? 0;
 
-          const r = calcWage(emp, weekKey());
+          const r = calcWage(emp, wk);
           const card = document.createElement("div");
-          card.className = "emp-card" + (r.ot > 0 ? " ot-warning" : "");
+          card.className =
+            "emp-card" +
+            (r.ot > 0 ? " ot-warning" : "") +
+            (isArchived ? " archived-card" : "");
           card.id = `card-${emp.id}`;
 
           const hdr = document.createElement("div");
           hdr.className = "emp-header";
-          hdr.innerHTML = `
-      <div class="emp-avatar color-${emp.color}">${emp.name
-            .charAt(0)
-            .toUpperCase()}</div>
+          if (isArchived) {
+            // Read-only header for archived employees
+            hdr.innerHTML = `
+      <div class="emp-avatar color-${emp.color}" style="opacity:0.6">${emp.name.charAt(0).toUpperCase()}</div>
       <div class="emp-info">
-        <input class="emp-name-input" type="text" value="${
-          emp.name
-        }" onchange="updateEmp(${emp.id},'name',this.value)">
-        <input class="emp-role-input" type="text" value="${
-          emp.role
-        }" placeholder="Role" onchange="updateEmp(${emp.id},'role',this.value)">
+        <span style="font-size:0.82rem;font-weight:600;color:var(--text)">${emp.name}<span class="archived-badge">Archived</span></span>
+        <span style="font-size:0.7rem;color:var(--muted)">${emp.role}</span>
       </div>
       <div class="emp-header-right">
-        <span class="ot-badge${r.ot > 0 ? " show" : ""}" id="ot-badge-${
-            emp.id
-          }">⚠ OT</span>
+        <div class="emp-rate-wrap">
+          <span class="rate-label">$/hr</span><span class="rate-prefix" style="color:var(--muted)">$</span>
+          <span style="font-size:0.82rem;color:var(--muted);padding:4px 6px">${emp.rate.toFixed(2)}</span>
+        </div>
+      </div>`;
+          } else {
+            hdr.innerHTML = `
+      <div class="emp-avatar color-${emp.color}">${emp.name.charAt(0).toUpperCase()}</div>
+      <div class="emp-info">
+        <input class="emp-name-input" type="text" value="${emp.name}" onchange="updateEmp(${emp.id},'name',this.value)">
+        <input class="emp-role-input" type="text" value="${emp.role}" placeholder="Role" onchange="updateEmp(${emp.id},'role',this.value)">
+      </div>
+      <div class="emp-header-right">
+        <span class="ot-badge${r.ot > 0 ? " show" : ""}" id="ot-badge-${emp.id}">⚠ OT</span>
         <div class="emp-rate-wrap">
           <span class="rate-label">$/hr</span><span class="rate-prefix">$</span>
-          <input class="emp-rate-input" type="number" min="0" step="0.5" value="${
-            emp.rate
-          }"
+          <input class="emp-rate-input" type="number" min="0" step="0.5" value="${emp.rate}"
             onchange="updateEmp(${emp.id},'rate',parseFloat(this.value)||0)">
         </div>
       </div>`;
+          }
           card.appendChild(hdr);
 
           const ch = document.createElement("div");
@@ -2969,43 +3035,56 @@
 
           const ns = document.createElement("div");
           ns.className = "notes-section";
-          ns.innerHTML = `<div class="notes-header"><span style="font-size:0.76rem">📝</span><span class="notes-label">Week Notes</span></div>
-      <textarea class="notes-input" rows="2" placeholder="Sick day, bonus, deductions…" oninput="setNotes(${
-        emp.id
-      },this.value)">${getNotes(emp.id)}</textarea>`;
+          if (isArchived) {
+            const notesVal = getNotes(emp.id);
+            ns.innerHTML = `<div class="notes-header"><span style="font-size:0.76rem">📝</span><span class="notes-label">Week Notes</span></div>
+      <div style="font-size:0.75rem;color:var(--muted);padding:4px 2px;min-height:1.6em">${notesVal || '—'}</div>`;
+          } else {
+            ns.innerHTML = `<div class="notes-header"><span style="font-size:0.76rem">📝</span><span class="notes-label">Week Notes</span></div>
+      <textarea class="notes-input" rows="2" placeholder="Sick day, bonus, deductions…" oninput="setNotes(${emp.id},this.value)">${getNotes(emp.id)}</textarea>`;
+          }
           card.appendChild(ns);
 
           const ft = document.createElement("div");
           ft.className = "emp-footer";
-          ft.innerHTML = `
+          if (isArchived) {
+            ft.innerHTML = `
       <div class="emp-stats">
-        <div class="stat"><span class="stat-label">Net Hrs</span><span class="stat-val hours" id="fh-${
-          emp.id
-        }">${r.hours.toFixed(2)}h</span></div>
-        <div class="stat"><span class="stat-label">Break</span><span class="stat-val brk" id="fb-${
-          emp.id
-        }">${r.brk > 0 ? r.brk.toFixed(2) + "h" : "—"}</span></div>
-        <div class="stat"><span class="stat-label">OT</span><span class="stat-val ot" id="fo-${
-          emp.id
-        }">${r.ot > 0 ? r.ot.toFixed(2) + "h OT" : "—"}</span></div>
-        <div class="stat"><span class="stat-label">This Week</span><span class="stat-val wage" id="fw-${
-          emp.id
-        }">$${r.wage.toFixed(2)}</span></div>
+        <div class="stat"><span class="stat-label">Net Hrs</span><span class="stat-val hours">${r.hours.toFixed(2)}h</span></div>
+        <div class="stat"><span class="stat-label">Break</span><span class="stat-val brk">${r.brk > 0 ? r.brk.toFixed(2) + "h" : "—"}</span></div>
+        <div class="stat"><span class="stat-label">OT</span><span class="stat-val ot">${r.ot > 0 ? r.ot.toFixed(2) + "h OT" : "—"}</span></div>
+        <div class="stat"><span class="stat-label">This Week</span><span class="stat-val wage">$${r.wage.toFixed(2)}</span></div>
       </div>
       <div class="footer-btns">
-        <button class="icon-btn copy-btn" onclick="copyLastWeek(${
-          emp.id
-        })">↩ Copy</button>
-        <button class="icon-btn" onclick="openTpl(${
-          emp.id
-        },null)">⚡ Tpl</button>
-        <button class="icon-btn" onclick="clearEmp(${emp.id})">Clear</button>
-        <button class="icon-btn danger" onclick="archiveEmp(${
-          emp.id
-        })">📦 Archive</button>
+        <button class="restore-btn" onclick="restoreEmp(${emp.id})">↩ Restore Employee</button>
       </div>`;
+          } else {
+            ft.innerHTML = `
+      <div class="emp-stats">
+        <div class="stat"><span class="stat-label">Net Hrs</span><span class="stat-val hours" id="fh-${emp.id}">${r.hours.toFixed(2)}h</span></div>
+        <div class="stat"><span class="stat-label">Break</span><span class="stat-val brk" id="fb-${emp.id}">${r.brk > 0 ? r.brk.toFixed(2) + "h" : "—"}</span></div>
+        <div class="stat"><span class="stat-label">OT</span><span class="stat-val ot" id="fo-${emp.id}">${r.ot > 0 ? r.ot.toFixed(2) + "h OT" : "—"}</span></div>
+        <div class="stat"><span class="stat-label">This Week</span><span class="stat-val wage" id="fw-${emp.id}">$${r.wage.toFixed(2)}</span></div>
+      </div>
+      <div class="footer-btns">
+        <button class="icon-btn copy-btn" onclick="copyLastWeek(${emp.id})">↩ Copy</button>
+        <button class="icon-btn" onclick="openTpl(${emp.id},null)">⚡ Tpl</button>
+        <button class="icon-btn" onclick="clearEmp(${emp.id})">Clear</button>
+        <button class="icon-btn danger" onclick="archiveEmp(${emp.id})">📦 Archive</button>
+      </div>`;
+          }
           card.appendChild(ft);
-          grid.appendChild(card);
+          return card;
+        }
+
+        // Render active employees
+        employees.filter((emp) => !emp.archived).forEach((emp) => {
+          grid.appendChild(buildCard(emp, false));
+        });
+
+        // Render archived employees that have actual recorded data for this week
+        employees.filter((emp) => emp.archived && empHasWeekData(emp.id, wk)).forEach((emp) => {
+          grid.appendChild(buildCard(emp, true));
         });
       }
 
@@ -3021,7 +3100,8 @@
           gW = 0,
           gB = 0;
         const cols = ["accent", "blue", "green", "red", "purple"];
-        employees.filter((emp) => !emp.archived).forEach((emp) => {
+        // Include archived employees who have data this week in the totals (but mark them)
+        employees.filter((emp) => !emp.archived || empHasWeekData(emp.id, wk)).forEach((emp) => {
           const r = calcWage(emp, wk),
             notes = weekData[wk]?._notes?.[emp.id] || "";
           gH += r.hours;
@@ -3379,12 +3459,19 @@
       // ═══════════════════════════════════════
       //  TOAST
       // ═══════════════════════════════════════
-      function showToast(msg) {
+      function showToast(msg, isHtml = false) {
         const el = document.getElementById("toast");
-        el.textContent = msg;
+        if (isHtml) el.innerHTML = msg;
+        else el.textContent = msg;
         el.classList.add("show");
         clearTimeout(el._t);
-        el._t = setTimeout(() => el.classList.remove("show"), 3200);
+        el._t = setTimeout(() => el.classList.remove("show"), 3800);
+      }
+      function escH(s) {
+        return String(s ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
       }
 
       // ═══════════════════════════════════════
