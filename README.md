@@ -27,11 +27,18 @@ A lightweight, mobile-first weekly payroll management application built as a sin
 - Visual ⚠️ OT warning badge and amber card border when overtime is triggered
 
 ### Employee Management
-- Add, rename, and remove employees at any time
+- Add, rename, and archive employees at any time
 - Editable name, role, and hourly rate per employee
 - **👤 Profile** — email, phone, gender, and date of birth per employee, editable from each employee card
+- **📦 Archive** hides a departed employee from the weekly grid while fully preserving their payroll history in Excel; **↩ Restore** brings them back any time
+- **🗑 Delete Forever** in the Archived Staff panel permanently removes an employee's staff record from every device once you're sure you no longer need to restore them — their past Excel rows are unaffected either way
 - Color-coded employee cards for quick identification
 - Week notes per employee for remarks, sick days, bonuses, or deductions
+
+### Dashboard
+- **📊 Labor Cost Histogram** — a 6-month bar chart of total labor cost, shown right at the top of the app
+- Tap any bar to jump straight to that month
+- The active (currently browsed) month is highlighted; navigate with **‹ ›** the same way as Monthly Overview — both stay in sync
 
 ### Wage Notice Emails
 - **📧 Send Wage Notices** — one tap in the Weekly Payroll Summary sends a personalized thank-you email (with that week's gross wage) to every active employee who has an email on file and logged hours that week
@@ -120,7 +127,7 @@ The app must be opened in **Safari** for home screen installation to work. Chrom
 3. Scroll down and tap **"Add to Home Screen"**
 4. Name it **Payroll** and tap **Add**
 
-The app will appear on your home screen with a gold **$** icon and will launch in fullscreen, behaving like a native application.
+The app will appear on your home screen with a slate-blue **$** icon and will launch in fullscreen, behaving like a native application.
 
 ---
 
@@ -158,13 +165,24 @@ Tap **👤 Profile** on any employee card to add or update their email, phone, g
 
 Once the week's hours are entered, tap **📧 Send Wage Notices** in the Weekly Payroll Summary section. You'll get a confirmation showing how many employees will receive a note (and who's being skipped for missing an email on file) before anything is sent. Each employee with logged hours and an email address gets a short, personalized thank-you email stating that week's gross wage, sent from your signed-in Microsoft account. This is a manual, one-tap action — it does not run on a schedule by itself.
 
+### Archiving, restoring, and deleting employees
+
+1. Tap **📦 Archive** on an employee's card footer to hide them from the weekly grid once they've left — their payroll history stays fully intact in Excel and in any week they still have recorded data
+2. Open the **📦 Archived Staff** panel (below the employee grid) to see everyone archived
+3. Tap **↩ Restore** to bring an archived employee back to the active grid
+4. Tap **🗑 Delete** to permanently remove an archived employee's staff record — confirm carefully, since this cannot be undone from within the app (their historical Excel rows are untouched either way)
+
+### Using the Dashboard
+
+The **📊 Dashboard** at the top of the app shows total labor cost for the last 6 months as a bar chart. Tap any bar to jump straight to that month everywhere else in the app (Monthly Overview, the weekly grid). Use the **‹ ›** arrows next to the Dashboard title to shift the whole 6-month window — this is the same navigation as Monthly Overview, so both always show the same selected month.
+
 ### Navigating weeks
 
 - Tap **← Prev** or **Next →** to move one week at a time
 - Tap **📅 Pick Week** or the date range in the header to open the calendar and jump to any week
 - Swipe left or right on the main screen on iPhone to change weeks
 - Tap **This Week** to return to the current week instantly
-- Tap any week in the **Monthly Overview** panel to jump directly to it
+- Tap any week in the **Monthly Overview** panel, or any bar in the **Dashboard**, to jump directly to it
 
 ---
 

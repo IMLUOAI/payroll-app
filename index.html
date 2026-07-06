@@ -887,6 +887,21 @@
         color: var(--blue);
       }
 
+      /* DASHBOARD */
+      .dashboard-panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .dashboard-subtitle {
+        padding: 8px 18px 0;
+        font-size: 0.6rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
       /* MONTHLY */
       .monthly-panel {
         background: var(--surface);
@@ -940,6 +955,69 @@
         color: var(--accent);
         min-width: 106px;
         text-align: center;
+      }
+      /* MONTHLY LABOR COST HISTOGRAM */
+      .monthly-chart {
+        padding: 12px 18px 16px;
+      }
+      .mchart-bars {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        height: 108px;
+      }
+      .mchart-bar-wrap {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
+        height: 100%;
+        gap: 4px;
+        cursor: pointer;
+        border: none;
+        background: none;
+        padding: 0;
+        font: inherit;
+      }
+      .mchart-val {
+        font-family: "DM Mono", monospace;
+        font-size: 0.54rem;
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+      }
+      .mchart-bar-wrap.active .mchart-val {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .mchart-bar {
+        width: 100%;
+        max-width: 36px;
+        background: var(--accent);
+        opacity: 0.32;
+        border-radius: 4px 4px 0 0;
+        min-height: 3px;
+        transition: opacity 0.15s;
+      }
+      .mchart-bar-wrap:hover .mchart-bar {
+        opacity: 0.55;
+      }
+      .mchart-bar-wrap.active .mchart-bar {
+        opacity: 1;
+      }
+      .mchart-lbl {
+        font-size: 0.54rem;
+        color: var(--muted2);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .mchart-bar-wrap.active .mchart-lbl {
+        color: var(--accent);
+        font-weight: 600;
       }
       .monthly-grid {
         display: grid;
@@ -1856,6 +1934,20 @@
     </div>
 
     <div class="main">
+      <!-- Dashboard — labor cost trend -->
+      <div class="dashboard-panel">
+        <div class="monthly-header">
+          <div class="monthly-title">📊 Dashboard</div>
+          <div class="monthly-nav">
+            <button onclick="monthlyPrev()">‹</button>
+            <span class="monthly-month-label" id="dash-label">—</span>
+            <button onclick="monthlyNext()">›</button>
+          </div>
+        </div>
+        <div class="dashboard-subtitle">Labor cost — last 6 months</div>
+        <div class="monthly-chart" id="monthly-chart"></div>
+      </div>
+
       <div class="employees-grid" id="emp-grid"></div>
       <div class="archived-section" id="archived-section"></div>
       <button class="add-emp-btn" onclick="addEmployee()">
@@ -3346,6 +3438,80 @@
       // ═══════════════════════════════════════
       //  MONTHLY OVERVIEW
       // ═══════════════════════════════════════
+      // Sum every employee's wage across all weeks overlapping (yr, mo) —
+      // used to build the trailing-months histogram without re-walking DOM.
+      function computeMonthTotal(yr, mo) {
+        const last = new Date(yr, mo + 1, 0);
+        const cur = mondayOf(new Date(yr, mo, 1));
+        let total = 0;
+        while (cur <= last) {
+          const key = cur.toISOString().slice(0, 10);
+          employees.forEach((emp) => {
+            total += calcWage(emp, key).wage;
+          });
+          cur.setDate(cur.getDate() + 7);
+        }
+        return total;
+      }
+
+      // Trailing 6-month labor cost histogram, ending at the month
+      // currently shown in the Monthly Overview grid below it.
+      function renderMonthlyChart(yr, mo, currentTotal) {
+        const N = 6;
+        const months = [];
+        for (let i = N - 1; i >= 0; i--) {
+          const d = new Date(yr, mo - i, 1);
+          const total =
+            i === 0 ? currentTotal : computeMonthTotal(d.getFullYear(), d.getMonth());
+          months.push({ yr: d.getFullYear(), mo: d.getMonth(), total });
+        }
+        const dashLabel = document.getElementById("dash-label");
+        if (dashLabel) {
+          const first = months[0],
+            lastM = months[months.length - 1];
+          dashLabel.textContent =
+            first.yr === lastM.yr
+              ? `${MONTH_NAMES[first.mo].slice(0, 3)} – ${MONTH_NAMES[
+                  lastM.mo
+                ].slice(0, 3)} ${lastM.yr}`
+              : `${MONTH_NAMES[first.mo].slice(0, 3)} ${first.yr} – ${MONTH_NAMES[
+                  lastM.mo
+                ].slice(0, 3)} ${lastM.yr}`;
+        }
+        const max = Math.max(...months.map((m) => m.total), 0.01);
+        const container = document.getElementById("monthly-chart");
+        container.innerHTML = `<div class="mchart-bars">${months
+          .map((m) => {
+            const pct =
+              m.total > 0 ? Math.max((m.total / max) * 100, 4) : 0;
+            const isActive = m.yr === yr && m.mo === mo;
+            return `
+              <button type="button" class="mchart-bar-wrap${
+                isActive ? " active" : ""
+              }" data-yr="${m.yr}" data-mo="${m.mo}" title="${
+              MONTH_NAMES[m.mo]
+            } ${m.yr}: ${m.total > 0 ? "$" + m.total.toFixed(2) : "no data"}">
+                <div class="mchart-val">${
+                  m.total > 0 ? "$" + m.total.toFixed(2) : "—"
+                }</div>
+                <div class="mchart-bar" style="height:${pct}%"></div>
+                <div class="mchart-lbl">${MONTH_NAMES[m.mo].slice(0, 3)}</div>
+              </button>`;
+          })
+          .join("")}</div>`;
+        container.querySelectorAll(".mchart-bar-wrap").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const targetYr = parseInt(btn.dataset.yr, 10);
+            const targetMo = parseInt(btn.dataset.mo, 10);
+            const now = new Date();
+            monthlyOff =
+              (targetYr - now.getFullYear()) * 12 +
+              (targetMo - now.getMonth());
+            renderMonthly();
+          });
+        });
+      }
+
       function renderMonthly() {
         const now = new Date(),
           td = new Date(now.getFullYear(), now.getMonth() + monthlyOff, 1);
@@ -3396,6 +3562,7 @@
         }
         document.getElementById("monthly-total").textContent =
           monthTotal > 0 ? "$" + monthTotal.toFixed(2) : "$0.00";
+        renderMonthlyChart(yr, mo, monthTotal);
       }
       function monthlyPrev() {
         monthlyOff--;
