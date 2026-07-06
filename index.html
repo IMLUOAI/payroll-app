@@ -2185,8 +2185,10 @@
 
       // ═══════════════════════════════════════
       //  CLOUDFLARE KV — STAFF SYNC
-      //  saveStaff() writes localStorage + KV together every time.
-      //  No manual push/pull. No way to get out of sync.
+      //  saveStaff() merges with the cloud copy before writing, so a
+      //  stale device (one that hasn't seen another device's edits yet)
+      //  can never blow away staff added/archived elsewhere. Each
+      //  employee carries an updatedAt stamp; per id, the newer copy wins.
       // ═══════════════════════════════════════
       const KV_WORKER_URL = "https://anthropic-proxy.imluoai.workers.dev";
       function getWorkerUrl() {
@@ -2195,11 +2197,40 @@
         ).replace(/\/+$/, "");
       }
 
-      // Write staff to localStorage AND KV in one call
+      // Union two staff lists by id, keeping whichever copy of each
+      // employee has the more recent updatedAt stamp (missing stamp = 0,
+      // so any real edit outranks a legacy record with none).
+      function mergeStaffLists(a, b) {
+        const map = new Map();
+        [a, b].forEach((list) => {
+          (list || []).forEach((e) => {
+            if (!e || e.id == null) return;
+            const existing = map.get(e.id);
+            if (!existing || (e.updatedAt || 0) >= (existing.updatedAt || 0)) {
+              map.set(e.id, e);
+            }
+          });
+        });
+        return Array.from(map.values());
+      }
+
+      async function fetchCloudStaff() {
+        const res = await fetch(`${getWorkerUrl()}/payroll-staff`);
+        if (!res.ok) return null;
+        const data = await res.json();
+        return Array.isArray(data) ? data : null;
+      }
+
+      // Write staff to localStorage AND KV — merging with the current
+      // cloud copy first so we never silently overwrite edits made on
+      // another device since this one last synced.
       async function saveStaff() {
         localStorage.setItem("pr2_emps", JSON.stringify(employees));
         setSyncStatus("syncing", "Saving…");
         try {
+          const cloud = await fetchCloudStaff();
+          employees = mergeStaffLists(cloud, employees);
+          localStorage.setItem("pr2_emps", JSON.stringify(employees));
           const res = await fetch(`${getWorkerUrl()}/payroll-staff`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -2207,6 +2238,7 @@
           });
           if (!res.ok) throw new Error(`${res.status}`);
           setSyncStatus("ok", `Synced ✓  ${employees.length} staff`);
+          render();
         } catch (e) {
           setSyncStatus("error", `Cloud sync failed — saved locally only`);
           showToast(
@@ -2215,21 +2247,33 @@
         }
       }
 
-      // On first load of a new browser — pull from KV once
+      // Force-overwrite the cloud with the current local list (explicit,
+      // user-confirmed reset — no merge, unlike saveStaff()).
+      async function pushStaffRaw() {
+        const res = await fetch(`${getWorkerUrl()}/payroll-staff`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(employees),
+        });
+        if (!res.ok) throw new Error(`${res.status}`);
+      }
+
+      // Pull from KV and merge into local (never a blind overwrite, so a
+      // manual/auto pull can't discard not-yet-synced local edits).
       async function kvInitialLoad() {
         try {
-          const res = await fetch(`${getWorkerUrl()}/payroll-staff`);
-          if (!res.ok) return;
-          const data = await res.json();
-          if (!Array.isArray(data) || !data.length) return;
-          employees = data.map((e, i) => ({
+          const data = await fetchCloudStaff();
+          if (!data || !data.length) return;
+          const cloud = data.map((e, i) => ({
             id: e.id || Date.now() + i,
             name: e.name || `Employee ${i + 1}`,
             role: e.role || "Part-time",
             rate: parseFloat(e.rate) || 15.0,
             color: e.color ?? i % 6,
+            updatedAt: e.updatedAt || 0,
             ...(e.archived ? { archived: true } : {}),
           }));
+          employees = mergeStaffLists(cloud, employees);
           localStorage.setItem("pr2_emps", JSON.stringify(employees));
           setSyncStatus("ok", `${employees.length} staff loaded from cloud`);
           render();
@@ -2271,7 +2315,8 @@
           "Reset & Push",
           "btn-confirm-red",
           async () => {
-            await saveStaff();
+            localStorage.setItem("pr2_emps", JSON.stringify(employees));
+            await pushStaffRaw();
             showToast(`✓ Cloud reset — ${employees.length} staff`);
           }
         );
@@ -2594,6 +2639,7 @@
         const e = employees.find((e) => e.id === id);
         if (!e) return;
         e[field] = val;
+        e.updatedAt = Date.now();
         if (field === "name") {
           const av = document.querySelector(`#card-${id} .emp-avatar`);
           if (av) av.textContent = val.charAt(0).toUpperCase();
@@ -2679,7 +2725,10 @@
           "btn-confirm-red",
           async () => {
             const target = employees.find((e) => e.id === id);
-            if (target) target.archived = true;
+            if (target) {
+              target.archived = true;
+              target.updatedAt = Date.now();
+            }
             await saveStaff();
             renderGrid();
             renderArchived();
@@ -2693,6 +2742,7 @@
         const target = employees.find((e) => e.id === id);
         if (!target) return;
         target.archived = false;
+        target.updatedAt = Date.now();
         saveStaff();
         renderGrid();
         renderArchived();
@@ -2735,6 +2785,7 @@
           role: "Part-time",
           rate: 15.0,
           color: c,
+          updatedAt: Date.now(),
         });
         await saveStaff();
         renderGrid();
@@ -4063,7 +4114,12 @@
                       cells[colIdx] = isStr ? sst[parseInt(v)] || "" : v;
                     }
                   });
-                  if (cellMatches.length) existingRows.push(cells);
+                  // Skip the TOTAL row written by a previous save — it's
+                  // regenerated fresh below, so carrying it forward as a
+                  // "data" row would leave stray TOTAL rows scattered
+                  // through the sheet on every subsequent save.
+                  if (cellMatches.length && cells[0] !== "TOTAL")
+                    existingRows.push(cells);
                 });
               }
             } catch (parseErr) {
