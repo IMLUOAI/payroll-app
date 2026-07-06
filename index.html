@@ -4082,8 +4082,14 @@
                 });
 
                 // Helper: convert column letter(s) to 0-based index (A→0, B→1, …, K→10)
+                // Returns -1 on anything unexpected instead of throwing — files
+                // re-saved by Excel/LibreOffice/Numbers can format cell refs
+                // in ways we don't anticipate, and a thrown error here used to
+                // abort parsing entirely and wipe all prior payroll history.
                 function colLetterToIdx(ref) {
-                  const letters = ref.match(/^([A-Z]+)/)[1];
+                  const m = /^([A-Z]+)/.exec(ref || "");
+                  if (!m) return -1;
+                  const letters = m[1];
                   let idx = 0;
                   for (let i = 0; i < letters.length; i++) {
                     idx = idx * 26 + (letters.charCodeAt(i) - 64);
@@ -4101,17 +4107,43 @@
                   if (parseInt(rm[1]) === 1) return;
                   // Pre-fill 11 empty slots so sparse rows align correctly
                   const cells = new Array(11).fill("");
+                  // Cell "r" attribute is technically optional per OOXML —
+                  // some tools omit it and rely on document order, so track
+                  // a running column position as a fallback. Each match is
+                  // bounded to its own <c>...</c> (or self-closing <c/>) so
+                  // a valueless cell can't accidentally swallow the next
+                  // cell's <v> while searching for one.
+                  let autoCol = 0;
                   const cellMatches = [
-                    ...rm[2].matchAll(
-                      /<c\s[^>]*\br="([A-Z]+\d+)"([^>]*)>(?:[\s\S]*?<v>([\s\S]*?)<\/v>)?[\s\S]*?<\/c>/g
-                    ),
+                    ...rm[2].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g),
                   ];
                   cellMatches.forEach((cm) => {
-                    const colIdx = colLetterToIdx(cm[1]);
-                    const isStr = cm[2].includes('t="s"');
-                    const v = cm[3] || "";
+                    const attrs = cm[1] || "";
+                    const inner = cm[2] || "";
+                    const rMatch = /\br="([A-Z]+\d+)"/.exec(attrs);
+                    const colIdx = rMatch
+                      ? colLetterToIdx(rMatch[1])
+                      : autoCol;
+                    autoCol = colIdx + 1;
+                    const isInline = /\bt="inlineStr"/.test(attrs);
+                    const isStr = isInline || /\bt="s"/.test(attrs);
+                    let v = "";
+                    if (isInline) {
+                      const tMatch =
+                        /<is>[\s\S]*?<t[^>]*>([\s\S]*?)<\/t>[\s\S]*?<\/is>/.exec(
+                          inner
+                        );
+                      v = tMatch ? tMatch[1] : "";
+                    } else {
+                      const vMatch = /<v>([\s\S]*?)<\/v>/.exec(inner);
+                      v = vMatch ? vMatch[1] : "";
+                    }
                     if (colIdx >= 0 && colIdx < cells.length) {
-                      cells[colIdx] = isStr ? sst[parseInt(v)] || "" : v;
+                      cells[colIdx] = isInline
+                        ? v
+                        : isStr
+                        ? sst[parseInt(v)] || ""
+                        : v;
                     }
                   });
                   // Skip the TOTAL row written by a previous save — it's
@@ -4123,10 +4155,14 @@
                 });
               }
             } catch (parseErr) {
-              showToast(
-                `⚠️ Could not read existing file — starting fresh. (${parseErr.message})`
+              // Do NOT fall back to existingRows = [] here — that silently
+              // overwrites the file with only this week's rows, destroying
+              // every prior week of payroll history. If we can't safely
+              // read what's already there, abort the save instead so the
+              // existing file on OneDrive is left untouched.
+              throw new Error(
+                `Could not read the existing Excel file — save aborted to protect your existing data. Nothing was overwritten. (${parseErr.message})`
               );
-              existingRows = [];
             }
           } else if (dlRes.status === 404) {
             await ensureOdFolder(token, OD_FOLDER);
