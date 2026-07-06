@@ -2322,6 +2322,7 @@
           const data = await fetchCloudStaff();
           if (!data || !data.length) return;
           const cloud = data.map((e, i) => ({
+            ...e,
             id: e.id || Date.now() + i,
             name: e.name || `Employee ${i + 1}`,
             role: e.role || "Part-time",
@@ -2329,6 +2330,7 @@
             color: e.color ?? i % 6,
             updatedAt: e.updatedAt || 0,
             ...(e.archived ? { archived: true } : {}),
+            ...(e.deleted ? { deleted: true } : {}),
           }));
           employees = mergeStaffLists(cloud, employees);
           localStorage.setItem("pr2_emps", JSON.stringify(employees));
@@ -2459,7 +2461,7 @@
         ).textContent = `Pay period: ${fmt(dd[0])} – ${fmt(
           dd[4]
         )}  ·  Payday: ${fmt(dd[4])}`;
-        const activeCount = employees.filter((e) => !e.archived).length;
+        const activeCount = employees.filter((e) => !e.archived && !e.deleted).length;
         document.getElementById("emp-count-label").textContent = `${
           activeCount
         } employee${activeCount !== 1 ? "s" : ""} · Friday`;
@@ -2841,10 +2843,38 @@
         updateStickyBar();
         showToast(`✓ ${target.name} restored.`);
       }
+      // Permanently removes an archived employee from the roster. This is
+      // a tombstone (deleted:true), not an array splice — staff sync only
+      // ever merges by "newest updatedAt wins" across devices, so a plain
+      // removal would just have the employee resurface next time another
+      // device (or the cloud) re-synced its own copy of the list. Marking
+      // it deleted lets the deletion itself propagate through that same
+      // merge, while every render path below filters deleted employees out
+      // completely — so from the UI it behaves like a real delete. Their
+      // past weeks in the Excel export are untouched either way.
+      function deleteEmp(id) {
+        const emp = employees.find((e) => e.id === id);
+        if (!emp) return;
+        showConfirm(
+          "Permanently Delete Employee?",
+          `"${emp.name}" will be permanently removed from your staff list on every device. Their payroll history already saved in Excel is not affected, but this cannot be undone from within the app.`,
+          "Delete Forever",
+          "btn-confirm-red",
+          async () => {
+            emp.deleted = true;
+            emp.updatedAt = Date.now();
+            await saveStaff();
+            renderArchived();
+            renderSummary();
+            updateStickyBar();
+            showToast(`🗑 ${emp.name} permanently deleted.`);
+          }
+        );
+      }
       function renderArchived() {
         const section = document.getElementById("archived-section");
         if (!section) return;
-        const archived = employees.filter((e) => e.archived);
+        const archived = employees.filter((e) => e.archived && !e.deleted);
         if (!archived.length) {
           section.innerHTML = "";
           return;
@@ -2861,6 +2891,7 @@
                 <span class="archived-name">${e.name}</span>
                 <span class="archived-role">${e.role}</span>
                 <button class="restore-btn" onclick="restoreEmp(${e.id})">↩ Restore</button>
+                <button class="restore-btn" style="color:var(--red);border-color:var(--red)" onclick="deleteEmp(${e.id})">🗑 Delete</button>
               </div>
             `).join('')}
           </div>`;
@@ -3221,12 +3252,12 @@
         }
 
         // Render active employees
-        employees.filter((emp) => !emp.archived).forEach((emp) => {
+        employees.filter((emp) => !emp.archived && !emp.deleted).forEach((emp) => {
           grid.appendChild(buildCard(emp, false));
         });
 
         // Render archived employees that have actual recorded data for this week
-        employees.filter((emp) => emp.archived && empHasWeekData(emp.id, wk)).forEach((emp) => {
+        employees.filter((emp) => emp.archived && !emp.deleted && empHasWeekData(emp.id, wk)).forEach((emp) => {
           grid.appendChild(buildCard(emp, true));
         });
       }
@@ -3244,7 +3275,7 @@
           gB = 0;
         const cols = ["accent", "blue", "green", "red", "purple"];
         // Include archived employees who have data this week in the totals (but mark them)
-        employees.filter((emp) => !emp.archived || empHasWeekData(emp.id, wk)).forEach((emp) => {
+        employees.filter((emp) => !emp.deleted && (!emp.archived || empHasWeekData(emp.id, wk))).forEach((emp) => {
           const r = calcWage(emp, wk),
             notes = weekData[wk]?._notes?.[emp.id] || "";
           gH += r.hours;
@@ -3309,7 +3340,7 @@
         s("sb-total", "$" + gW.toFixed(2));
         s("sb-hrs", gH.toFixed(2));
         s("sb-ot", gO > 0 ? gO.toFixed(2) : "0.00");
-        s("sb-emps", employees.filter((e) => !e.archived).length);
+        s("sb-emps", employees.filter((e) => !e.archived && !e.deleted).length);
       }
 
       // ═══════════════════════════════════════
@@ -4166,7 +4197,7 @@
         const recipients = [];
         const skipped = [];
         employees
-          .filter((e) => !e.archived)
+          .filter((e) => !e.archived && !e.deleted)
           .forEach((emp) => {
             const r = calcWage(emp, wk);
             if (r.hours === 0) return; // no shift logged this week
