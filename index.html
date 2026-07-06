@@ -1353,6 +1353,21 @@
       .tpl-form input:focus {
         border-color: var(--accent);
       }
+      .tpl-form select {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-family: "DM Mono", monospace;
+        font-size: 0.76rem;
+        padding: 6px 9px;
+        border-radius: 3px;
+        outline: none;
+        width: 100%;
+        margin-bottom: 8px;
+      }
+      .tpl-form select:focus {
+        border-color: var(--accent);
+      }
       .tpl-row {
         display: grid;
         grid-template-columns: 1fr 1fr 1fr;
@@ -1862,6 +1877,13 @@
             >
               📊 Save to Excel
             </button>
+            <button
+              class="action-btn btn-share"
+              id="wage-notice-btn"
+              onclick="sendWageNotices()"
+            >
+              📧 Send Wage Notices
+            </button>
             <button class="action-btn btn-share" onclick="shareCSV()">
               ↑ Share CSV
             </button>
@@ -1996,6 +2018,41 @@
           <button class="btn-cancel" onclick="closeTpl()">Close</button>
           <button class="btn-confirm-green" onclick="saveTpl()">
             Save Template
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Employee Profile Modal -->
+    <div class="modal-overlay" id="profile-modal">
+      <div class="modal-box">
+        <h3 id="profile-modal-title">👤 Profile</h3>
+        <div class="tpl-form">
+          <label>Email</label>
+          <input type="email" id="prof-email" placeholder="name@company.com" />
+          <label>Phone</label>
+          <input type="tel" id="prof-phone" placeholder="(555) 555-5555" />
+          <div class="tpl-row" style="grid-template-columns: 1fr 1fr">
+            <div>
+              <label>Gender</label>
+              <select id="prof-gender">
+                <option value="">—</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+                <option value="Prefer not to say">Prefer not to say</option>
+              </select>
+            </div>
+            <div>
+              <label>Date of Birth</label>
+              <input type="date" id="prof-dob" />
+            </div>
+          </div>
+        </div>
+        <div class="modal-btns" style="margin-top: 13px">
+          <button class="btn-cancel" onclick="closeProfile()">Cancel</button>
+          <button class="btn-confirm-green" onclick="saveProfile()">
+            Save Profile
           </button>
         </div>
       </div>
@@ -2651,6 +2708,40 @@
       }
 
       // ═══════════════════════════════════════
+      //  EMPLOYEE PROFILE (email, phone, gender, DOB)
+      // ═══════════════════════════════════════
+      let _profileEmpId = null;
+      function openProfile(id) {
+        const e = employees.find((e) => e.id === id);
+        if (!e) return;
+        _profileEmpId = id;
+        document.getElementById("profile-modal-title").textContent =
+          `👤 ${e.name}'s Profile`;
+        document.getElementById("prof-email").value = e.email || "";
+        document.getElementById("prof-phone").value = e.phone || "";
+        document.getElementById("prof-gender").value = e.gender || "";
+        document.getElementById("prof-dob").value = e.dob || "";
+        document.getElementById("profile-modal").classList.add("open");
+      }
+      function closeProfile() {
+        document.getElementById("profile-modal").classList.remove("open");
+        _profileEmpId = null;
+      }
+      function saveProfile() {
+        const id = _profileEmpId;
+        const e = employees.find((e) => e.id === id);
+        if (!e) return;
+        e.email = document.getElementById("prof-email").value.trim();
+        e.phone = document.getElementById("prof-phone").value.trim();
+        e.gender = document.getElementById("prof-gender").value;
+        e.dob = document.getElementById("prof-dob").value;
+        e.updatedAt = Date.now();
+        saveStaff();
+        closeProfile();
+        showToast(`✓ ${e.name}'s profile saved.`);
+      }
+
+      // ═══════════════════════════════════════
       //  CONFIRM MODAL
       // ═══════════════════════════════════════
       let _cb = null;
@@ -3120,6 +3211,7 @@
       <div class="footer-btns">
         <button class="icon-btn copy-btn" onclick="copyLastWeek(${emp.id})">↩ Copy</button>
         <button class="icon-btn" onclick="openTpl(${emp.id},null)">⚡ Tpl</button>
+        <button class="icon-btn" onclick="openProfile(${emp.id})">👤 Profile</button>
         <button class="icon-btn" onclick="clearEmp(${emp.id})">Clear</button>
         <button class="icon-btn danger" onclick="archiveEmp(${emp.id})">📦 Archive</button>
       </div>`;
@@ -3608,7 +3700,7 @@
       // ═══════════════════════════════════════
       const OD_FOLDER = "/Double Sided ISCM/Payroll";
       const OD_FILE = "Payroll_Master.xlsx";
-      const OD_SCOPES = ["Files.ReadWrite", "User.Read"];
+      const OD_SCOPES = ["Files.ReadWrite", "User.Read", "Mail.Send"];
 
       let _msalInstance = null;
 
@@ -4019,6 +4111,134 @@
           compressionOptions: { level: 6 },
         });
         return blob;
+      }
+
+      // ═══════════════════════════════════════
+      //  WAGE NOTICE EMAILS — sent via Microsoft Graph, same sign-in as OneDrive
+      // ═══════════════════════════════════════
+      function weekRangeLabel(wk) {
+        const mon = new Date(wk + "T00:00:00");
+        const fri = new Date(mon);
+        fri.setDate(mon.getDate() + 4);
+        const opts = { month: "short", day: "numeric", year: "numeric" };
+        return `${mon.toLocaleDateString("en-US", opts)} – ${fri.toLocaleDateString(
+          "en-US",
+          opts
+        )}`;
+      }
+
+      async function sendGraphMail(token, emp, wage, wk) {
+        const firstName = (emp.name || "").split(" ")[0] || emp.name;
+        const subject = "Your weekly wage is on its way 💵";
+        const html = `
+          <p>Hi ${escH(firstName)},</p>
+          <p>Your wages for the week of <strong>${weekRangeLabel(
+            wk
+          )}</strong> — <strong>$${wage.toFixed(
+          2
+        )}</strong> — are on their way to you.</p>
+          <p>Thank you for your hard work this week — it really doesn't go unnoticed. We're glad to have you on the team!</p>
+          <p style="margin-top:20px;">— Double Sided ISCM LLC</p>
+        `;
+        const res = await fetch(
+          "https://graph.microsoft.com/v1.0/me/sendMail",
+          {
+            method: "POST",
+            headers: {
+              Authorization: "Bearer " + token,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              message: {
+                subject,
+                body: { contentType: "HTML", content: html },
+                toRecipients: [{ emailAddress: { address: emp.email } }],
+              },
+              saveToSentItems: true,
+            }),
+          }
+        );
+        if (!res.ok) throw new Error(`${res.status}`);
+      }
+
+      async function sendWageNotices() {
+        const wk = weekKey();
+        const recipients = [];
+        const skipped = [];
+        employees
+          .filter((e) => !e.archived)
+          .forEach((emp) => {
+            const r = calcWage(emp, wk);
+            if (r.hours === 0) return; // no shift logged this week
+            if (!emp.email) {
+              skipped.push(emp.name);
+              return;
+            }
+            recipients.push({ emp, wage: r.wage });
+          });
+
+        if (!recipients.length) {
+          showToast(
+            skipped.length
+              ? `⚠️ No email on file for: ${skipped.join(", ")}`
+              : "Nothing to send — no active hours this week."
+          );
+          return;
+        }
+
+        const alreadySent = weekData[wk]?._wageNoticesSent;
+        const msg =
+          `Send a thank-you wage notice to ${recipients.length} employee${
+            recipients.length === 1 ? "" : "s"
+          } for the week of ${weekRangeLabel(wk)}?` +
+          (skipped.length
+            ? ` (Skipping ${skipped.length} — no email on file: ${skipped.join(
+                ", "
+              )})`
+            : "") +
+          (alreadySent
+            ? " Notices were already sent for this week — this will send again."
+            : "");
+
+        showConfirm(
+          "Send Wage Notices?",
+          msg,
+          "Send",
+          "btn-confirm-green",
+          async () => {
+            const btn = document.getElementById("wage-notice-btn");
+            const orig = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = "⏳ Sending...";
+            const failed = [];
+            let sent = 0;
+            try {
+              const token = await getOdToken();
+              for (const { emp, wage } of recipients) {
+                try {
+                  await sendGraphMail(token, emp, wage, wk);
+                  sent++;
+                } catch (e) {
+                  failed.push(emp.name);
+                }
+              }
+              weekData[wk] ??= {};
+              weekData[wk]._wageNoticesSent = true;
+              save();
+              showToast(
+                failed.length
+                  ? `✓ Sent ${sent}. ⚠️ Failed for: ${failed.join(", ")}`
+                  : `✓ Sent wage notices to ${sent} employee${
+                      sent === 1 ? "" : "s"
+                    }!`
+              );
+            } catch (e) {
+              showToast("❌ " + e.message);
+            }
+            btn.disabled = false;
+            btn.textContent = orig;
+          }
+        );
       }
 
       // ─── Save to OneDrive — no external Excel library needed ───

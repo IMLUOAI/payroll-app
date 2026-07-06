@@ -29,8 +29,14 @@ A lightweight, mobile-first weekly payroll management application built as a sin
 ### Employee Management
 - Add, rename, and remove employees at any time
 - Editable name, role, and hourly rate per employee
+- **👤 Profile** — email, phone, gender, and date of birth per employee, editable from each employee card
 - Color-coded employee cards for quick identification
 - Week notes per employee for remarks, sick days, bonuses, or deductions
+
+### Wage Notice Emails
+- **📧 Send Wage Notices** — one tap in the Weekly Payroll Summary sends a personalized thank-you email (with that week's gross wage) to every active employee who has an email on file and logged hours that week
+- Sent via Microsoft Graph using the same Microsoft sign-in as OneDrive — no separate email setup
+- Employees without an email on file are skipped and listed in the confirmation prompt
 
 ### Scheduling Tools
 - **⚡ Shift Templates** — save common shifts (e.g. 9am–5pm, 30 min break) and apply in one tap
@@ -42,10 +48,9 @@ A lightweight, mobile-first weekly payroll management application built as a sin
 - Prev/Next week buttons and "This Week" shortcut
 - **Swipe left/right** on mobile to navigate between weeks
 - Monthly overview panel showing payroll totals for every week in the month
-- **🔒 Past-week read-only lock** — navigating to any previous week automatically locks all inputs to prevent accidental edits; a blue banner is shown with an "Unlock to Edit" button to override intentionally (session-only, re-locks on refresh)
 
 ### Export & Reporting
-- **📊 Save to Excel** — appends weekly data to a master `.xlsx` file in OneDrive, built with professional formatting: navy blue header row, alternating light-blue data rows, Arial font, `#,##0.00` number formatting on all pay/hour columns, and thin borders throughout
+- **📊 Save to Excel** — appends weekly data to a master Excel file in OneDrive via Microsoft Graph API
 - **↑ Share CSV** — exports current week as CSV and routes through the iOS Share Sheet
 - **↓ All Weeks CSV** — exports the full payroll history across all recorded weeks
 - Print-friendly layout
@@ -145,6 +150,14 @@ Tap **↩ Copy** on any employee card to copy that employee's entire previous we
 
 After entering the week's data, tap **📊 Save to Excel** in the Weekly Payroll Summary section. The app will append the current week's rows to the master Excel file at `/Double Sided ISCM/Payroll/Payroll_Master.xlsx` on your OneDrive. Existing records are never overwritten.
 
+### Editing an employee's profile
+
+Tap **👤 Profile** on any employee card to add or update their email, phone, gender, and date of birth. These are stored alongside the rest of their staff record and synced the same way (locally and to the cloud, if configured).
+
+### Sending wage notices
+
+Once the week's hours are entered, tap **📧 Send Wage Notices** in the Weekly Payroll Summary section. You'll get a confirmation showing how many employees will receive a note (and who's being skipped for missing an email on file) before anything is sent. Each employee with logged hours and an email address gets a short, personalized thank-you email stating that week's gross wage, sent from your signed-in Microsoft account. This is a manual, one-tap action — it does not run on a schedule by itself.
+
 ### Navigating weeks
 
 - Tap **← Prev** or **Next →** to move one week at a time
@@ -152,8 +165,6 @@ After entering the week's data, tap **📊 Save to Excel** in the Weekly Payroll
 - Swipe left or right on the main screen on iPhone to change weeks
 - Tap **This Week** to return to the current week instantly
 - Tap any week in the **Monthly Overview** panel to jump directly to it
-
-> **Past-week lock:** When you navigate to a previous week, all inputs are automatically disabled and a 🔒 banner appears. Tap **Unlock to Edit** on the banner if you need to make a correction. The lock resets when you refresh the page.
 
 ---
 
@@ -201,7 +212,10 @@ These are the only two values needed. The client secret is not used.
 3. Add the following permissions:
    - `Files.ReadWrite`
    - `User.Read`
+   - `Mail.Send` (needed for the **📧 Send Wage Notices** feature — the app sends email as you, from your own signed-in mailbox)
 4. Click **Grant admin consent** if you are an administrator, or request consent from your administrator
+
+If your app registration was created before `Mail.Send` was added, add the permission above, then sign out and back in via **⚙️ Settings** so the browser picks up the new scope (you'll see the Microsoft consent screen again, listing "Send mail as you").
 
 ### Step 5 — Configure the app
 
@@ -224,9 +238,7 @@ Credentials are saved locally to your device and persist across sessions. You wi
 | Fonts | Syne (headings), DM Mono (data) via Google Fonts |
 | Data storage | Browser `localStorage` — persists per device, per origin |
 | Authentication | MSAL.js 2.x (`@azure/msal-browser`) via CDN, popup flow |
-| Excel generation | Hand-crafted OOXML `.xlsx` via JSZip (loaded on demand) — no SheetJS or external Excel library; full styles.xml with 6 cell XFs (header, data plain/alt, numeric plain/alt), custom number formats, and thin borders |
-| Excel upload | Microsoft Graph API — `Files.ReadWrite` scope, PUT to `/me/drive/root:/path:/content` |
-| Past-week safety | Read-only lock via CSS `pointer-events: none` on `#emp-grid.past-locked`; per-session unlock set (`unlockedPastWeeks`) |
+| Excel integration | Microsoft Graph API — `Files.ReadWrite` scope, range PATCH |
 | Offline support | Service Worker registered via Blob URL, caches Google Fonts |
 | PWA | Web App Manifest (inline data URI), apple-touch-icon, standalone display mode |
 | iOS support | `viewport-fit=cover`, `env(safe-area-inset-*)`, `-webkit-fill-available` |
@@ -238,19 +250,11 @@ Credentials are saved locally to your device and persist across sessions. You wi
 ```
 User taps "Save to Excel"
   → MSAL acquireTokenSilent (falls back to popup if expired)
-  → Graph: GET /me/drive/root:/Double Sided ISCM/Payroll/Payroll_Master.xlsx:/content
-      → 404: ensure OneDrive folder exists (create if needed)
-      → 200: parse existing .xlsx via JSZip
-              ├─ Extract sharedStrings.xml → build string lookup table
-              └─ Extract sheet1.xml → parse all data rows (skip header row 1)
-  → Deduplicate: remove existing rows that match the same employee + pay period start
-     (re-saving a week replaces rather than stacks rows)
-  → Build new .xlsx blob via hand-crafted OOXML:
-      ├─ sharedStrings.xml  — shared string table
-      ├─ styles.xml         — 6-XF professional style sheet (header, plain/alt data, numeric)
-      ├─ sheet1.xml         — frozen header row + styled data rows
-      └─ workbook.xml + relationships
-  → Graph: PUT .xlsx blob → /me/drive/root:/path:/content
+  → Graph: GET /me/drive/root:/Double Sided ISCM/Payroll/Payroll_Master.xlsx
+      → 404: create folder structure, upload blank .xlsx, create "Payroll" sheet + header row
+      → 200: open existing file
+  → Graph: GET usedRange → determine next empty row
+  → Graph: PATCH range → append this week's rows
   → Toast confirmation
 ```
 
@@ -258,9 +262,8 @@ User taps "Save to Excel"
 
 ```
 repository/
-├── index.html              # Entire application — HTML, CSS, JavaScript in one file
-├── msal-browser.min.js     # MSAL.js bundled locally (no CDN dependency for auth)
-└── README.md               # This document
+├── index.html        # Entire application — HTML, CSS, JavaScript in one file
+└── README.md         # This document
 ```
 
 ---
