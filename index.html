@@ -4036,6 +4036,14 @@
         });
       }
 
+      // Set right before calling loginRedirect() so that after Microsoft
+      // redirects back and the page reloads from scratch, we know to show
+      // the "Redirecting..." state momentarily and can restore focus to
+      // whichever button (Settings vs. the auth gate) actually triggered
+      // sign-in — mostly cosmetic, since initAuthGate() drives the real
+      // unlock either way.
+      const REDIRECT_INTENT_KEY = "pr2_signin_redirect_intent";
+
       async function getMsal() {
         const clientId = localStorage.getItem("pr2_client_id") || "";
         const tenantId = localStorage.getItem("pr2_tenant_id") || "";
@@ -4056,45 +4064,60 @@
               storeAuthStateInCookie: true,
             },
           });
+          // Must run once per instance, before anything else touches MSAL —
+          // this is what actually completes a sign-in after Microsoft
+          // redirects back to the app (loginRedirect() itself just
+          // navigates away; the result only becomes available here, on
+          // the reload that follows).
+          try {
+            const resp = await _msalInstance.handleRedirectPromise();
+            if (resp && resp.account) {
+              localStorage.setItem(
+                "pr2_od_account",
+                JSON.stringify({
+                  name: resp.account.name,
+                  username: resp.account.username,
+                  homeAccountId: resp.account.homeAccountId,
+                })
+              );
+              updateOdStatusUI();
+            }
+          } catch (e) {
+            console.error("MSAL redirect handling failed:", e);
+          }
         }
         return _msalInstance;
       }
 
-      // Shared MSAL popup flow — used by both the Settings "Sign in with
-      // Microsoft" button and the full-app auth gate.
-      async function performMsalSignIn() {
+      // Shared MSAL sign-in flow — used by both the Settings "Sign in with
+      // Microsoft" button and the full-app auth gate. Uses a full-page
+      // REDIRECT rather than a popup: popups are unreliable on iOS Safari
+      // (they can silently fail to return, leaving MSAL's internal
+      // "interaction in progress" flag stuck, which then blocks every
+      // future sign-in attempt with an interaction_in_progress error until
+      // the tab is closed). A redirect just navigates the whole page to
+      // Microsoft and back, which works consistently on mobile.
+      async function performMsalSignIn(intent) {
         const ms = await getMsal();
-        const resp = await ms.loginPopup({
-          scopes: OD_SCOPES,
-          prompt: "select_account",
-        });
-        localStorage.setItem(
-          "pr2_od_account",
-          JSON.stringify({
-            name: resp.account.name,
-            username: resp.account.username,
-            homeAccountId: resp.account.homeAccountId,
-          })
-        );
-        updateOdStatusUI();
-        return resp;
+        if (intent) localStorage.setItem(REDIRECT_INTENT_KEY, intent);
+        await ms.loginRedirect({ scopes: OD_SCOPES, prompt: "select_account" });
+        // Execution does not meaningfully continue past this line — the
+        // page is navigating away. Anything after this only runs if the
+        // redirect itself failed to start.
       }
 
       async function odSignIn() {
         const btn = document.getElementById("btn-od-connect");
         const origText = btn.textContent;
-        btn.textContent = "⏳ Connecting...";
+        btn.textContent = "⏳ Redirecting...";
         btn.disabled = true;
         try {
-          const resp = await performMsalSignIn();
-          closeSettings();
-          showToast(`✓ Signed in as ${resp.account.name}`);
+          await performMsalSignIn("settings");
         } catch (e) {
           const msg = e.message || e.errorCode || String(e);
           if (!msg.includes("user_cancelled") && !msg.includes("cancelled")) {
             showToast("❌ Sign in failed: " + msg);
           }
-        } finally {
           btn.textContent = origText;
           btn.disabled = false;
         }
@@ -4132,20 +4155,28 @@
         signinSection.style.display = "";
         setupSection.style.display = "none";
         try {
-          // Silent-only check — unlike getOdToken(), this must NEVER fall
-          // back to an interactive popup here, since this runs passively
-          // on every load. An unsolicited popup outside a click handler
-          // would likely be blocked by the browser anyway.
+          // getMsal() must run first, unconditionally — on the page load
+          // right after Microsoft redirects back, it's the one that
+          // processes that response and writes pr2_od_account. Checking
+          // localStorage before calling it would miss a fresh sign-in.
+          const ms = await getMsal();
           const acctData = localStorage.getItem("pr2_od_account");
           if (!acctData) throw new Error("not signed in");
-          const ms = await getMsal();
           const acctInfo = JSON.parse(acctData);
           const accounts = ms.getAllAccounts();
           const account =
             accounts.find((a) => a.homeAccountId === acctInfo.homeAccountId) ||
             accounts[0];
           if (!account) throw new Error("session expired");
+          // Silent-only from here — unlike getOdToken(), this must NEVER
+          // fall back to an interactive popup/redirect on its own, since
+          // this runs passively on every load.
           await ms.acquireTokenSilent({ scopes: OD_SCOPES, account });
+          const intent = localStorage.getItem(REDIRECT_INTENT_KEY);
+          if (intent) {
+            localStorage.removeItem(REDIRECT_INTENT_KEY);
+            showToast(`✓ Signed in as ${acctInfo.name || "your account"}`);
+          }
           unlockApp();
         } catch (e) {
           // Not signed in yet (or session expired) — leave the gate up.
@@ -4156,19 +4187,18 @@
         const btn = document.getElementById("gate-signin-btn");
         const errEl = document.getElementById("gate-error");
         const origText = btn.textContent;
-        btn.textContent = "⏳ Connecting...";
+        btn.textContent = "⏳ Redirecting...";
         btn.disabled = true;
         errEl.textContent = "";
         try {
-          const resp = await performMsalSignIn();
-          showToast(`✓ Signed in as ${resp.account.name}`);
-          unlockApp();
+          await performMsalSignIn("gate");
+          // Page is navigating to Microsoft now — nothing below this line
+          // runs unless the redirect itself failed to start.
         } catch (e) {
           const msg = e.message || e.errorCode || String(e);
           if (!msg.includes("user_cancelled") && !msg.includes("cancelled")) {
             errEl.textContent = "❌ Sign in failed: " + msg;
           }
-        } finally {
           btn.textContent = origText;
           btn.disabled = false;
         }
