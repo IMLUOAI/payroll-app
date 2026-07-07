@@ -1279,6 +1279,71 @@
         -webkit-tap-highlight-color: transparent;
       }
 
+      /* AUTH GATE — blocks the whole app until Microsoft sign-in succeeds.
+         z-index sits below .modal-overlay (200) so Settings can still be
+         opened on top of it for first-time Client ID / Tenant ID setup. */
+      .auth-gate {
+        position: fixed;
+        inset: 0;
+        z-index: 150;
+        background: var(--bg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 22px;
+      }
+      .auth-gate.unlocked {
+        display: none;
+      }
+      .auth-gate-box {
+        width: min(360px, 94vw);
+        text-align: center;
+        background: var(--surface);
+        border: 1px solid var(--border2);
+        border-radius: 12px;
+        padding: 32px 26px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+      }
+      .auth-gate-logo {
+        font-family: "Syne", sans-serif;
+        font-weight: 800;
+        font-size: 1.6rem;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+      .auth-gate-company {
+        font-size: 0.6rem;
+        color: var(--muted);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        margin-top: 3px;
+        margin-bottom: 20px;
+      }
+      .auth-gate-msg {
+        font-size: 0.72rem;
+        color: var(--muted);
+        line-height: 1.6;
+        margin-bottom: 18px;
+      }
+      .auth-gate-btn {
+        width: 100%;
+        justify-content: center;
+        font-size: 0.72rem;
+        padding: 10px 14px;
+        background: var(--surface2);
+        border-color: var(--accent) !important;
+        color: var(--accent) !important;
+      }
+      .auth-gate-btn:hover {
+        background: var(--border);
+      }
+      .auth-gate-error {
+        margin-top: 12px;
+        font-size: 0.66rem;
+        color: var(--red);
+        line-height: 1.5;
+      }
+
       /* MODAL OVERLAY */
       .modal-overlay {
         position: fixed;
@@ -1862,6 +1927,41 @@
     </style>
   </head>
   <body>
+    <!-- Auth Gate — blocks the whole app until Microsoft sign-in succeeds -->
+    <div class="auth-gate" id="auth-gate">
+      <div class="auth-gate-box">
+        <h1 class="auth-gate-logo">PAYROLL</h1>
+        <div class="auth-gate-company">Double Sided ISCM LLC</div>
+        <div id="auth-gate-signin">
+          <p class="auth-gate-msg">
+            This app is restricted to authorized accounting staff. Sign in
+            with your company Microsoft account to continue.
+          </p>
+          <button
+            class="btn-od-connect auth-gate-btn"
+            id="gate-signin-btn"
+            onclick="gateSignIn()"
+          >
+            🔗 Sign in with Microsoft
+          </button>
+          <div class="auth-gate-error" id="gate-error"></div>
+        </div>
+        <div id="auth-gate-setup" style="display: none">
+          <p class="auth-gate-msg">
+            Microsoft sign-in hasn't been configured on this device yet. Ask
+            your administrator for the Client ID and Tenant ID, then enter
+            them in Settings.
+          </p>
+          <button
+            class="btn-od-connect auth-gate-btn"
+            onclick="openSettings()"
+          >
+            ⚙️ Open Settings
+          </button>
+        </div>
+      </div>
+    </div>
+
     <header>
       <div class="logo">
         <h1>PAYROLL</h1>
@@ -3827,10 +3927,15 @@
         updateStickyBar();
         applyLockState();
       }
-      render();
-      // On a brand new browser with no local staff — pull once from KV
-      if (!localStorage.getItem("pr2_emps")) {
-        kvInitialLoad();
+      // App content stays hidden behind the auth gate until this runs —
+      // see initAuthGate() / unlockApp() further down.
+      function unlockApp() {
+        document.getElementById("auth-gate").classList.add("unlocked");
+        render();
+        // On a brand new browser with no local staff — pull once from KV
+        if (!localStorage.getItem("pr2_emps")) {
+          kvInitialLoad();
+        }
       }
 
       // ═══════════════════════════════════════
@@ -3865,6 +3970,11 @@
           document.getElementById("s-tenant-id").value.trim()
         );
         _msalInstance = null;
+        // If the auth gate is still up (first-time setup), re-check now
+        // that credentials exist — this flips it from "setup" to "sign in".
+        if (!document.getElementById("auth-gate").classList.contains("unlocked")) {
+          initAuthGate();
+        }
       }
       function updateOdStatusUI() {
         const acct = localStorage.getItem("pr2_od_account");
@@ -3939,7 +4049,7 @@
             auth: {
               clientId,
               authority: `https://login.microsoftonline.com/${tenantId}`,
-              redirectUri: "https://imluoai.github.io/payroll-app/",
+              redirectUri: "https://payroll.wareplatform.com/",
             },
             cache: {
               cacheLocation: "localStorage",
@@ -3950,26 +4060,33 @@
         return _msalInstance;
       }
 
+      // Shared MSAL popup flow — used by both the Settings "Sign in with
+      // Microsoft" button and the full-app auth gate.
+      async function performMsalSignIn() {
+        const ms = await getMsal();
+        const resp = await ms.loginPopup({
+          scopes: OD_SCOPES,
+          prompt: "select_account",
+        });
+        localStorage.setItem(
+          "pr2_od_account",
+          JSON.stringify({
+            name: resp.account.name,
+            username: resp.account.username,
+            homeAccountId: resp.account.homeAccountId,
+          })
+        );
+        updateOdStatusUI();
+        return resp;
+      }
+
       async function odSignIn() {
         const btn = document.getElementById("btn-od-connect");
         const origText = btn.textContent;
         btn.textContent = "⏳ Connecting...";
         btn.disabled = true;
         try {
-          const ms = await getMsal();
-          const resp = await ms.loginPopup({
-            scopes: OD_SCOPES,
-            prompt: "select_account",
-          });
-          localStorage.setItem(
-            "pr2_od_account",
-            JSON.stringify({
-              name: resp.account.name,
-              username: resp.account.username,
-              homeAccountId: resp.account.homeAccountId,
-            })
-          );
-          updateOdStatusUI();
+          const resp = await performMsalSignIn();
           closeSettings();
           showToast(`✓ Signed in as ${resp.account.name}`);
         } catch (e) {
@@ -3988,7 +4105,75 @@
         localStorage.removeItem("pr2_od_account");
         updateOdStatusUI();
         showToast("Signed out of OneDrive.");
+        // Signing out re-locks the whole app, not just the Excel/Email
+        // integration, since Microsoft sign-in doubles as the access gate.
+        initAuthGate();
       }
+
+      // ═══════════════════════════════════════
+      //  AUTH GATE
+      //  The entire app is hidden behind this until a real Microsoft
+      //  token can be silently (or interactively) acquired. Unlike the
+      //  KV staff sync, this is a genuine check against Microsoft's own
+      //  servers via MSAL — not just a localStorage flag — though anyone
+      //  with dev tools could still inspect localStorage directly, since
+      //  there is no backend here to enforce this server-side.
+      // ═══════════════════════════════════════
+      async function initAuthGate() {
+        const clientId = localStorage.getItem("pr2_client_id") || "";
+        const tenantId = localStorage.getItem("pr2_tenant_id") || "";
+        const signinSection = document.getElementById("auth-gate-signin");
+        const setupSection = document.getElementById("auth-gate-setup");
+        if (!clientId || !tenantId) {
+          signinSection.style.display = "none";
+          setupSection.style.display = "";
+          return;
+        }
+        signinSection.style.display = "";
+        setupSection.style.display = "none";
+        try {
+          // Silent-only check — unlike getOdToken(), this must NEVER fall
+          // back to an interactive popup here, since this runs passively
+          // on every load. An unsolicited popup outside a click handler
+          // would likely be blocked by the browser anyway.
+          const acctData = localStorage.getItem("pr2_od_account");
+          if (!acctData) throw new Error("not signed in");
+          const ms = await getMsal();
+          const acctInfo = JSON.parse(acctData);
+          const accounts = ms.getAllAccounts();
+          const account =
+            accounts.find((a) => a.homeAccountId === acctInfo.homeAccountId) ||
+            accounts[0];
+          if (!account) throw new Error("session expired");
+          await ms.acquireTokenSilent({ scopes: OD_SCOPES, account });
+          unlockApp();
+        } catch (e) {
+          // Not signed in yet (or session expired) — leave the gate up.
+        }
+      }
+
+      async function gateSignIn() {
+        const btn = document.getElementById("gate-signin-btn");
+        const errEl = document.getElementById("gate-error");
+        const origText = btn.textContent;
+        btn.textContent = "⏳ Connecting...";
+        btn.disabled = true;
+        errEl.textContent = "";
+        try {
+          const resp = await performMsalSignIn();
+          showToast(`✓ Signed in as ${resp.account.name}`);
+          unlockApp();
+        } catch (e) {
+          const msg = e.message || e.errorCode || String(e);
+          if (!msg.includes("user_cancelled") && !msg.includes("cancelled")) {
+            errEl.textContent = "❌ Sign in failed: " + msg;
+          }
+        } finally {
+          btn.textContent = origText;
+          btn.disabled = false;
+        }
+      }
+      initAuthGate();
 
       async function getOdToken() {
         const acctData = localStorage.getItem("pr2_od_account");

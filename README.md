@@ -116,6 +116,14 @@ Replace with your actual GitHub username and repository name after completing th
 
 Your app will be live at your GitHub Pages URL within 1–2 minutes.
 
+### Optional — using a custom domain / subdomain
+
+If you already own a domain (e.g. for another app), you can serve this one from a subdomain of it instead of the default `github.io` URL:
+
+1. In your DNS provider (e.g. Cloudflare), add a **CNAME** record: subdomain (e.g. `payroll`) → `<your-github-username>.github.io`, with the proxy status set to **DNS only** — GitHub Pages' TLS certificate provisioning is more reliable this way
+2. In the repo's **Settings → Pages → Custom domain**, enter the full subdomain (e.g. `payroll.yourdomain.com`) and save; wait for the DNS check to pass, then enable **Enforce HTTPS**
+3. Update the Azure app registration's redirect URI (see below) and the `redirectUri` value in `index.html` to match your new domain exactly, including the trailing slash
+
 ---
 
 ## iPhone Installation
