@@ -4303,6 +4303,33 @@
         return _jszipPromise;
       }
 
+      // Load SheetJS on demand — used only to READ back an existing
+      // Payroll_Master.xlsx before appending to it. A hand-rolled regex
+      // parser kept breaking on real-world files re-saved by Excel,
+      // LibreOffice, or Numbers (rich-text shared-string runs, inline
+      // strings, sparse cells with no "r" attribute, etc.) — each fix
+      // only narrowed the next failure mode. SheetJS handles all of that
+      // correctly by construction, so we stop patching this by hand.
+      let _xlsxLibPromise = null;
+      function loadXLSXLib() {
+        if (!_xlsxLibPromise) {
+          _xlsxLibPromise = new Promise((resolve, reject) => {
+            if (window.XLSX) {
+              resolve(window.XLSX);
+              return;
+            }
+            const s = document.createElement("script");
+            s.src =
+              "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+            s.onload = () => resolve(window.XLSX);
+            s.onerror = () =>
+              reject(new Error("XLSX parsing library failed to load."));
+            document.head.appendChild(s);
+          });
+        }
+        return _xlsxLibPromise;
+      }
+
       // Escape XML special characters
       function xmlEsc(v) {
         return String(v ?? "")
@@ -4692,100 +4719,37 @@
           );
           if (dlRes.ok) {
             try {
-              const JSZip = await loadJSZip();
+              const XLSX = await loadXLSXLib();
               const buf = await dlRes.arrayBuffer();
-              const zip = await JSZip.loadAsync(buf);
-              const sheetFile = zip.file("xl/worksheets/sheet1.xml");
-              const sstFile = zip.file("xl/sharedStrings.xml");
-              if (sheetFile) {
-                const sheetXmlStr = await sheetFile.async("string");
-                const sstStr = sstFile ? await sstFile.async("string") : "";
-
-                // Build shared strings lookup
-                const sst = [];
-                sstStr.replace(/<t[^>]*>([\s\S]*?)<\/t>/g, (_, t) => {
-                  sst.push(
-                    t
-                      .replace(/&amp;/g, "&")
-                      .replace(/&lt;/g, "<")
-                      .replace(/&gt;/g, ">")
-                      .replace(/&quot;/g, '"')
-                      .replace(/&apos;/g, "'")
+              const wb = XLSX.read(buf, { type: "array" });
+              const sheet = wb.Sheets[wb.SheetNames[0]];
+              if (sheet) {
+                // header:1 + defval gives back plain arrays sized to the
+                // sheet's actual column range, with every gap filled in —
+                // this is what a hand-rolled parser kept getting wrong for
+                // sparse rows (cells a tool omitted rather than writing
+                // empty), which was shifting later columns out of place.
+                const allRows = XLSX.utils.sheet_to_json(sheet, {
+                  header: 1,
+                  raw: true,
+                  defval: "",
+                });
+                existingRows = allRows
+                  .slice(1) // row 1 is the header
+                  .map((r) => {
+                    const row = (r || [])
+                      .slice(0, 11)
+                      .map((v) => (v == null ? "" : v));
+                    while (row.length < 11) row.push("");
+                    return row;
+                  })
+                  // Skip blank rows, and the TOTAL row written by a
+                  // previous save — it's regenerated fresh below, so
+                  // carrying it forward as data would leave stray TOTAL
+                  // rows scattered through the sheet on every save.
+                  .filter(
+                    (row) => row.some((v) => v !== "") && row[0] !== "TOTAL"
                   );
-                });
-
-                // Helper: convert column letter(s) to 0-based index (A→0, B→1, …, K→10)
-                // Returns -1 on anything unexpected instead of throwing — files
-                // re-saved by Excel/LibreOffice/Numbers can format cell refs
-                // in ways we don't anticipate, and a thrown error here used to
-                // abort parsing entirely and wipe all prior payroll history.
-                function colLetterToIdx(ref) {
-                  const m = /^([A-Z]+)/.exec(ref || "");
-                  if (!m) return -1;
-                  const letters = m[1];
-                  let idx = 0;
-                  for (let i = 0; i < letters.length; i++) {
-                    idx = idx * 26 + (letters.charCodeAt(i) - 64);
-                  }
-                  return idx - 1;
-                }
-
-                // Parse rows — skip row 1 (header)
-                const rowMatches = [
-                  ...sheetXmlStr.matchAll(
-                    /<row[^>]*\br="(\d+)"[^>]*>([\s\S]*?)<\/row>/g
-                  ),
-                ];
-                rowMatches.forEach((rm) => {
-                  if (parseInt(rm[1]) === 1) return;
-                  // Pre-fill 11 empty slots so sparse rows align correctly
-                  const cells = new Array(11).fill("");
-                  // Cell "r" attribute is technically optional per OOXML —
-                  // some tools omit it and rely on document order, so track
-                  // a running column position as a fallback. Each match is
-                  // bounded to its own <c>...</c> (or self-closing <c/>) so
-                  // a valueless cell can't accidentally swallow the next
-                  // cell's <v> while searching for one.
-                  let autoCol = 0;
-                  const cellMatches = [
-                    ...rm[2].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g),
-                  ];
-                  cellMatches.forEach((cm) => {
-                    const attrs = cm[1] || "";
-                    const inner = cm[2] || "";
-                    const rMatch = /\br="([A-Z]+\d+)"/.exec(attrs);
-                    const colIdx = rMatch
-                      ? colLetterToIdx(rMatch[1])
-                      : autoCol;
-                    autoCol = colIdx + 1;
-                    const isInline = /\bt="inlineStr"/.test(attrs);
-                    const isStr = isInline || /\bt="s"/.test(attrs);
-                    let v = "";
-                    if (isInline) {
-                      const tMatch =
-                        /<is>[\s\S]*?<t[^>]*>([\s\S]*?)<\/t>[\s\S]*?<\/is>/.exec(
-                          inner
-                        );
-                      v = tMatch ? tMatch[1] : "";
-                    } else {
-                      const vMatch = /<v>([\s\S]*?)<\/v>/.exec(inner);
-                      v = vMatch ? vMatch[1] : "";
-                    }
-                    if (colIdx >= 0 && colIdx < cells.length) {
-                      cells[colIdx] = isInline
-                        ? v
-                        : isStr
-                        ? sst[parseInt(v)] || ""
-                        : v;
-                    }
-                  });
-                  // Skip the TOTAL row written by a previous save — it's
-                  // regenerated fresh below, so carrying it forward as a
-                  // "data" row would leave stray TOTAL rows scattered
-                  // through the sheet on every subsequent save.
-                  if (cellMatches.length && cells[0] !== "TOTAL")
-                    existingRows.push(cells);
-                });
               }
             } catch (parseErr) {
               // Do NOT fall back to existingRows = [] here — that silently
