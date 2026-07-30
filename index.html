@@ -1729,6 +1729,43 @@
       .settings-modal {
         max-width: 420px;
         width: min(420px, 95vw);
+        max-height: 88vh;
+        overflow-y: auto;
+      }
+      .settings-modal-header {
+        position: sticky;
+        top: -22px;
+        margin: -22px -22px 14px;
+        padding: 16px 22px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        z-index: 1;
+      }
+      .settings-modal-header h3 {
+        margin-bottom: 0;
+      }
+      .settings-close-x {
+        background: none;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        width: 27px;
+        height: 27px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        transition: all 0.15s;
+      }
+      .settings-close-x:hover {
+        border-color: var(--accent);
+        color: var(--accent);
       }
       .settings-section {
         margin-bottom: 18px;
@@ -2253,7 +2290,16 @@
     <!-- Settings / OneDrive Modal -->
     <div class="modal-overlay" id="settings-modal">
       <div class="modal-box settings-modal">
-        <h3>⚙️ Settings & OneDrive</h3>
+        <div class="settings-modal-header">
+          <h3>⚙️ Settings & OneDrive</h3>
+          <button
+            class="settings-close-x"
+            onclick="closeSettings()"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
 
         <div class="settings-section">
           <h4>☁️ Cloudflare Staff Sync</h4>
