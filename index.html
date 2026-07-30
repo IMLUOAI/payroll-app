@@ -2303,6 +2303,42 @@
         </div>
 
         <div class="settings-section">
+          <h4>☁️ Weekly Hours Sync</h4>
+          <div
+            class="od-status disconnected"
+            id="wd-sync-status"
+            style="margin-top: 6px"
+          >
+            <div class="od-dot" id="wd-sync-dot"></div>
+            <span id="wd-sync-text">Not synced yet</span>
+          </div>
+          <div class="settings-btn-row" style="margin-top: 8px">
+            <button
+              class="btn-od-connect"
+              onclick="wdPull()"
+              style="
+                background: rgba(96, 184, 240, 0.1);
+                border-color: rgba(96, 184, 240, 0.3);
+                color: var(--blue);
+              "
+            >
+              ↓ Pull from Cloud
+            </button>
+            <button class="btn-od-connect" onclick="wdPush()">
+              ↑ Push to Cloud
+            </button>
+          </div>
+          <div class="settings-note" style="margin-top: 8px">
+            Clock in/out times, breaks, and week notes sync the same way as
+            staff — automatically in the background as you work, and merged
+            (never overwritten) whenever this device or another one
+            reconnects. Use <strong>↓ Pull</strong> /
+            <strong>↑ Push</strong> only if you want to force a sync right
+            now.
+          </div>
+        </div>
+
+        <div class="settings-section">
           <h4>Microsoft Azure Credentials</h4>
           <div class="settings-row">
             <label>Client ID (Application ID)</label>
@@ -2430,6 +2466,7 @@
         localStorage.setItem("pr2_emps", JSON.stringify(employees));
         localStorage.setItem("pr2_weeks", JSON.stringify(weekData));
         localStorage.setItem("pr2_tpls", JSON.stringify(templates));
+        scheduleWeekDataPush();
       }
 
       // ═══════════════════════════════════════
@@ -2530,6 +2567,168 @@
           render();
         } catch (e) {
           /* offline — use local */
+        }
+      }
+
+      // ═══════════════════════════════════════
+      //  WEEKDATA SYNC — same Cloudflare KV Worker as staff, separate key.
+      //  Merges at the individual day-entry level (and per-employee week
+      //  notes), each carrying its own updatedAt stamp — same principle
+      //  as the staff merge fix: union everything, newest wins per entry,
+      //  never a blind whole-document overwrite. Known gap: clearing a
+      //  day/week locally (the Clear button) doesn't propagate as a
+      //  deletion through this merge — a stale device could resurrect a
+      //  cleared entry, mirroring the tombstone problem already solved
+      //  for employee deletes but not yet extended here.
+      // ═══════════════════════════════════════
+      async function fetchCloudWeekData() {
+        const res = await fetch(`${getWorkerUrl()}/payroll-weekdata`);
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data && typeof data === "object" && !Array.isArray(data)
+          ? data
+          : null;
+      }
+
+      function mergeWeekData(cloud, local) {
+        const merged = {};
+        const weeks = new Set([
+          ...Object.keys(cloud || {}),
+          ...Object.keys(local || {}),
+        ]);
+        weeks.forEach((wk) => {
+          const c = (cloud && cloud[wk]) || {};
+          const l = (local && local[wk]) || {};
+          const mergedWeek = {};
+
+          const empIds = new Set([
+            ...Object.keys(c).filter((k) => k !== "_notes" && k !== "_notesTs"),
+            ...Object.keys(l).filter((k) => k !== "_notes" && k !== "_notesTs"),
+          ]);
+          empIds.forEach((empId) => {
+            const cEmp = c[empId] || {};
+            const lEmp = l[empId] || {};
+            const days = new Set([
+              ...Object.keys(cEmp),
+              ...Object.keys(lEmp),
+            ]);
+            const mergedEmp = {};
+            days.forEach((di) => {
+              const cDay = cEmp[di];
+              const lDay = lEmp[di];
+              if (!cDay) mergedEmp[di] = lDay;
+              else if (!lDay) mergedEmp[di] = cDay;
+              else
+                mergedEmp[di] =
+                  (lDay.updatedAt || 0) >= (cDay.updatedAt || 0)
+                    ? lDay
+                    : cDay;
+            });
+            mergedWeek[empId] = mergedEmp;
+          });
+
+          const cNotes = c._notes || {},
+            lNotes = l._notes || {};
+          const cNotesTs = c._notesTs || {},
+            lNotesTs = l._notesTs || {};
+          const noteEmpIds = new Set([
+            ...Object.keys(cNotes),
+            ...Object.keys(lNotes),
+          ]);
+          if (noteEmpIds.size) {
+            mergedWeek._notes = {};
+            mergedWeek._notesTs = {};
+            noteEmpIds.forEach((empId) => {
+              const useLocal =
+                (lNotesTs[empId] || 0) >= (cNotesTs[empId] || 0);
+              mergedWeek._notes[empId] = useLocal
+                ? lNotes[empId] ?? cNotes[empId]
+                : cNotes[empId] ?? lNotes[empId];
+              mergedWeek._notesTs[empId] = useLocal
+                ? lNotesTs[empId] || 0
+                : cNotesTs[empId] || 0;
+            });
+          }
+
+          merged[wk] = mergedWeek;
+        });
+        return merged;
+      }
+
+      // Debounced background push — save() calls this on every local edit,
+      // but typing (e.g. week notes) fires on every keystroke, so pushing
+      // immediately on each call would spam the Worker. Collapses rapid
+      // successive edits into one push after a short pause.
+      let _weekDataPushTimer = null;
+      function scheduleWeekDataPush() {
+        clearTimeout(_weekDataPushTimer);
+        _weekDataPushTimer = setTimeout(() => {
+          pushWeekData().catch(() => {
+            setWdSyncStatus("error", "Background sync failed — saved locally only");
+          });
+        }, 2500);
+      }
+
+      function setWdSyncStatus(state, msg) {
+        const el = document.getElementById("wd-sync-status");
+        const dot = document.getElementById("wd-sync-dot");
+        const txt = document.getElementById("wd-sync-text");
+        if (!el) return;
+        el.className =
+          "od-status " + (state === "ok" ? "connected" : "disconnected");
+        if (dot)
+          dot.style.background =
+            state === "ok"
+              ? "var(--green)"
+              : state === "syncing"
+              ? "var(--accent)"
+              : "var(--red)";
+        if (txt) txt.textContent = msg;
+      }
+
+      async function pushWeekData() {
+        const cloud = await fetchCloudWeekData();
+        weekData = mergeWeekData(cloud, weekData);
+        localStorage.setItem("pr2_weeks", JSON.stringify(weekData));
+        await fetch(`${getWorkerUrl()}/payroll-weekdata`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(weekData),
+        });
+        setWdSyncStatus("ok", `Synced ✓ ${new Date().toLocaleTimeString()}`);
+      }
+
+      // Pull-merge on load/unlock — every device always reconciles with
+      // the cloud copy on open, not just "brand new browser" like staff,
+      // since hours are higher-stakes data and until now were only ever
+      // backed up locally in that one browser.
+      async function pullWeekDataInitial() {
+        try {
+          const cloud = await fetchCloudWeekData();
+          if (!cloud) return;
+          weekData = mergeWeekData(cloud, weekData);
+          localStorage.setItem("pr2_weeks", JSON.stringify(weekData));
+          render();
+          setWdSyncStatus("ok", `Synced ✓ ${new Date().toLocaleTimeString()}`);
+        } catch (e) {
+          /* offline — use local */
+        }
+      }
+
+      async function wdPull() {
+        setWdSyncStatus("syncing", "Pulling…");
+        await pullWeekDataInitial();
+        showToast("✓ Weekly hours pulled from cloud");
+      }
+
+      async function wdPush() {
+        setWdSyncStatus("syncing", "Pushing…");
+        try {
+          await pushWeekData();
+          showToast("✓ Weekly hours pushed to cloud");
+        } catch (e) {
+          setWdSyncStatus("error", "Push failed");
+          showToast("❌ Push failed: " + e.message);
         }
       }
 
@@ -2866,7 +3065,9 @@
         const wk = weekKey();
         weekData[wk] ??= {};
         weekData[wk]._notes ??= {};
+        weekData[wk]._notesTs ??= {};
         weekData[wk]._notes[empId] = val;
+        weekData[wk]._notesTs[empId] = Date.now();
         save();
         renderSummary();
         updateStickyBar();
@@ -2874,13 +3075,16 @@
       function toggleDay(empId, di) {
         const d = ensureDay(empId, di);
         d.active = !d.active;
+        d.updatedAt = Date.now();
         save();
         renderCard(empId);
         renderSummary();
         updateStickyBar();
       }
       function setField(empId, di, field, val) {
-        ensureDay(empId, di)[field] = val;
+        const d = ensureDay(empId, di);
+        d[field] = val;
+        d.updatedAt = Date.now();
         save();
         refreshDayRow(empId, di);
         renderSummary();
@@ -3130,7 +3334,12 @@
           () => {
             const wk = weekKey();
             weekData[wk] ??= {};
-            weekData[wk][empId] = JSON.parse(JSON.stringify(prevData));
+            const copied = JSON.parse(JSON.stringify(prevData));
+            const now = Date.now();
+            Object.values(copied).forEach((day) => {
+              if (day && typeof day === "object") day.updatedAt = now;
+            });
+            weekData[wk][empId] = copied;
             save();
             renderCard(empId);
             renderSummary();
@@ -3188,6 +3397,7 @@
         d.start = t.start;
         d.end = t.end;
         d.breakMins = t.breakMins || "";
+        d.updatedAt = Date.now();
         save();
         renderCard(empId);
         renderSummary();
@@ -3936,6 +4146,14 @@
         if (!localStorage.getItem("pr2_emps")) {
           kvInitialLoad();
         }
+        // Every load reconciles hours with the cloud copy — this is what
+        // would have prevented the "browser lost my data" incident (a new
+        // origin/domain, cleared storage, etc. all just merge back in).
+        pullWeekDataInitial();
+        // Once-a-day background backup to Excel — see dailyAutoSave().
+        setTimeout(() => {
+          dailyAutoSave().catch(() => {});
+        }, 1500);
       }
 
       // ═══════════════════════════════════════
@@ -4818,11 +5036,30 @@
           setTimeout(() => {
             btn.textContent = "📊 Save to Excel";
           }, 3000);
+          btn.classList.remove("loading");
+          return true;
         } catch (e) {
           showToast("❌ " + e.message);
           btn.textContent = "📊 Save to Excel";
         }
         btn.classList.remove("loading");
+        return false;
+      }
+
+      // ─── Daily auto-backup — once per calendar day, silently back up
+      // the current week to Excel so a lost/cleared browser can never
+      // wipe out more than a day's unsaved hours. Reuses saveToExcel()
+      // as-is (same visible button feedback) rather than a separate
+      // silent path, so it's never a surprise what just happened.
+      async function dailyAutoSave() {
+        const today = new Date().toISOString().slice(0, 10);
+        if (localStorage.getItem("pr2_last_autosave_date") === today) return;
+        if (!localStorage.getItem("pr2_od_account")) return; // not signed in yet
+        const ok = await saveToExcel();
+        // Only mark today done on success — a failure (offline, token
+        // expired, file locked, etc.) should retry next time the app is
+        // opened today rather than silently skip a whole day.
+        if (ok) localStorage.setItem("pr2_last_autosave_date", today);
       }
 
       // Ensure folder path exists on OneDrive

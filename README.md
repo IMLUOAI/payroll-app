@@ -35,6 +35,12 @@ A lightweight, mobile-first weekly payroll management application built as a sin
 - Color-coded employee cards for quick identification
 - Week notes per employee for remarks, sick days, bonuses, or deductions
 
+### Cross-Device Sync
+- Staff records (names, rates, profiles, archived/deleted status) and weekly hours (clock in/out, breaks, notes) both sync automatically to a shared Cloudflare KV store via a Worker — open the app on any signed-in device and it reconciles with the cloud copy
+- Sync is **merge-based, never a blind overwrite**: each record carries its own last-updated timestamp, and the newer version of each individual field wins — so a device that's behind can never silently erase another device's more recent edits
+- Manual **↓ Pull from Cloud** / **↑ Push to Cloud** controls are available in ⚙️ Settings for both staff and hours, for troubleshooting or forcing a sync
+- Known limitation: clearing a day or week (the **Clear** button) doesn't yet propagate as a deletion through sync — a stale device could resurrect a cleared entry the next time it syncs
+
 ### Dashboard
 - **📊 Labor Cost Histogram** — a 6-month bar chart of total labor cost, shown right at the top of the app
 - Tap any bar to jump straight to that month
@@ -58,6 +64,7 @@ A lightweight, mobile-first weekly payroll management application built as a sin
 
 ### Export & Reporting
 - **📊 Save to Excel** — appends weekly data to a master Excel file in OneDrive via Microsoft Graph API
+- **Daily auto-backup** — once per calendar day, the app automatically saves the current week to Excel in the background (same as tapping Save to Excel yourself), so a lost or cleared browser can never wipe out more than a day's unsaved hours. Runs once you're signed in; retries later the same day if it fails (e.g. offline)
 - **↑ Share CSV** — exports current week as CSV and routes through the iOS Share Sheet
 - **↓ All Weeks CSV** — exports the full payroll history across all recorded weeks
 - Print-friendly layout
@@ -262,9 +269,10 @@ Credentials are saved locally to your device and persist across sessions. You wi
 | Runtime | Single HTML file, vanilla JavaScript, no build step |
 | Styling | CSS custom properties, dark/light theme, mobile-first |
 | Fonts | Syne (headings), DM Mono (data) via Google Fonts |
-| Data storage | Browser `localStorage` — persists per device, per origin |
-| Authentication | MSAL.js 2.x (`@azure/msal-browser`) via CDN, popup flow |
-| Excel integration | Microsoft Graph API — `Files.ReadWrite` scope, range PATCH |
+| Data storage | Browser `localStorage` (per device, per origin), merge-synced to Cloudflare KV via a Worker |
+| Authentication | MSAL.js 2.x (`@azure/msal-browser`) via CDN, redirect flow (reliable on iOS Safari; popups are not) |
+| Excel integration | Microsoft Graph API — `Files.ReadWrite` scope, full-file read via SheetJS + rewrite |
+| Cloud sync | Cloudflare Worker + KV — `/payroll-staff` and `/payroll-weekdata`, per-record timestamp merge |
 | Offline support | Service Worker registered via Blob URL, caches Google Fonts |
 | PWA | Web App Manifest (inline data URI), apple-touch-icon, standalone display mode |
 | iOS support | `viewport-fit=cover`, `env(safe-area-inset-*)`, `-webkit-fill-available` |
