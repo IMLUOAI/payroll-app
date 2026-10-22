@@ -4443,7 +4443,14 @@
           }
           unlockApp();
         } catch (e) {
-          // Not signed in yet (or session expired) — leave the gate up.
+          // TEMPORARY BYPASS (2026-10-21): MFA issues with Microsoft 365 admin account
+          // are locking the user out of Azure/Entra. Unlock the app anyway so payroll
+          // tracking continues. OneDrive Excel saves and wage emails will still fail
+          // until Microsoft sign-in works again. Remove this catch body and restore
+          // the original empty catch to re-enable the auth gate.
+          console.warn("Auth gate bypassed (temporary MFA workaround):", e);
+          showToast("⚠ Temporary bypass active — Microsoft sign-in skipped due to MFA issues");
+          unlockApp();
         }
       }
 
