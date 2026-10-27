@@ -35,8 +35,6 @@
       href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap"
       rel="stylesheet"
     />
-    <!-- MSAL loaded from same repo — no CDN dependency -->
-    <script src="msal-browser.min.js"></script>
     <style>
       /* ── Soft Slate & Mist — Light (default) ── */
       :root {
@@ -1279,71 +1277,6 @@
         -webkit-tap-highlight-color: transparent;
       }
 
-      /* AUTH GATE — blocks the whole app until Microsoft sign-in succeeds.
-         z-index sits below .modal-overlay (200) so Settings can still be
-         opened on top of it for first-time Client ID / Tenant ID setup. */
-      .auth-gate {
-        position: fixed;
-        inset: 0;
-        z-index: 150;
-        background: var(--bg);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 22px;
-      }
-      .auth-gate.unlocked {
-        display: none;
-      }
-      .auth-gate-box {
-        width: min(360px, 94vw);
-        text-align: center;
-        background: var(--surface);
-        border: 1px solid var(--border2);
-        border-radius: 12px;
-        padding: 32px 26px;
-        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
-      }
-      .auth-gate-logo {
-        font-family: "Syne", sans-serif;
-        font-weight: 800;
-        font-size: 1.6rem;
-        color: var(--accent);
-        letter-spacing: -0.02em;
-      }
-      .auth-gate-company {
-        font-size: 0.6rem;
-        color: var(--muted);
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        margin-top: 3px;
-        margin-bottom: 20px;
-      }
-      .auth-gate-msg {
-        font-size: 0.72rem;
-        color: var(--muted);
-        line-height: 1.6;
-        margin-bottom: 18px;
-      }
-      .auth-gate-btn {
-        width: 100%;
-        justify-content: center;
-        font-size: 0.72rem;
-        padding: 10px 14px;
-        background: var(--surface2);
-        border-color: var(--accent) !important;
-        color: var(--accent) !important;
-      }
-      .auth-gate-btn:hover {
-        background: var(--border);
-      }
-      .auth-gate-error {
-        margin-top: 12px;
-        font-size: 0.66rem;
-        color: var(--red);
-        line-height: 1.5;
-      }
-
       /* MODAL OVERLAY */
       .modal-overlay {
         position: fixed;
@@ -1964,41 +1897,6 @@
     </style>
   </head>
   <body>
-    <!-- Auth Gate — blocks the whole app until Microsoft sign-in succeeds -->
-    <div class="auth-gate" id="auth-gate">
-      <div class="auth-gate-box">
-        <h1 class="auth-gate-logo">PAYROLL</h1>
-        <div class="auth-gate-company">Double Sided ISCM LLC</div>
-        <div id="auth-gate-signin">
-          <p class="auth-gate-msg">
-            This app is restricted to authorized accounting staff. Sign in
-            with your company Microsoft account to continue.
-          </p>
-          <button
-            class="btn-od-connect auth-gate-btn"
-            id="gate-signin-btn"
-            onclick="gateSignIn()"
-          >
-            🔗 Sign in with Microsoft
-          </button>
-          <div class="auth-gate-error" id="gate-error"></div>
-        </div>
-        <div id="auth-gate-setup" style="display: none">
-          <p class="auth-gate-msg">
-            Microsoft sign-in hasn't been configured on this device yet. Ask
-            your administrator for the Client ID and Tenant ID, then enter
-            them in Settings.
-          </p>
-          <button
-            class="btn-od-connect auth-gate-btn"
-            onclick="openSettings()"
-          >
-            ⚙️ Open Settings
-          </button>
-        </div>
-      </div>
-    </div>
-
     <header>
       <div class="logo">
         <h1>PAYROLL</h1>
@@ -2024,7 +1922,7 @@
           class="gear-btn"
           id="gear-btn"
           onclick="openSettings()"
-          title="OneDrive Settings"
+          title="Settings"
         >
           ⚙️
         </button>
@@ -2104,7 +2002,7 @@
               id="excel-btn"
               onclick="saveToExcel()"
             >
-              📊 Save to Excel
+              📊 Download Excel
             </button>
             <button
               class="action-btn btn-share"
@@ -2287,11 +2185,11 @@
       </div>
     </div>
 
-    <!-- Settings / OneDrive Modal -->
+    <!-- Settings Modal -->
     <div class="modal-overlay" id="settings-modal">
       <div class="modal-box settings-modal">
         <div class="settings-modal-header">
-          <h3>⚙️ Settings & OneDrive</h3>
+          <h3>⚙️ Settings</h3>
           <button
             class="settings-close-x"
             onclick="closeSettings()"
@@ -2381,69 +2279,6 @@
             reconnects. Use <strong>↓ Pull</strong> /
             <strong>↑ Push</strong> only if you want to force a sync right
             now.
-          </div>
-        </div>
-
-        <div class="settings-section">
-          <h4>Microsoft Azure Credentials</h4>
-          <div class="settings-row">
-            <label>Client ID (Application ID)</label>
-            <input
-              type="text"
-              id="s-client-id"
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              oninput="saveSettings()"
-            />
-          </div>
-          <div class="settings-row">
-            <label>Tenant ID</label>
-            <input
-              type="text"
-              id="s-tenant-id"
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              oninput="saveSettings()"
-            />
-          </div>
-          <div class="settings-note">
-            <strong>Where to find these:</strong> Azure Portal → App
-            registrations → your app → Overview. Your Client Secret is
-            <strong>not needed</strong> here — login is handled securely via
-            Microsoft popup.
-          </div>
-        </div>
-
-        <div class="settings-section">
-          <h4>OneDrive Connection</h4>
-          <div class="od-status disconnected" id="od-status">
-            <div class="od-dot"></div>
-            <span id="od-status-text"
-              >Not connected — sign in to link your OneDrive</span
-            >
-          </div>
-          <div class="settings-btn-row">
-            <button
-              class="btn-od-connect"
-              id="btn-od-connect"
-              onclick="odSignIn()"
-            >
-              🔗 Sign in with Microsoft
-            </button>
-            <button
-              class="btn-od-disconnect"
-              id="btn-od-disconnect"
-              style="display: none"
-              onclick="odSignOut()"
-            >
-              Sign Out
-            </button>
-          </div>
-          <div class="settings-note" style="margin-top: 10px">
-            Excel file will be saved to:
-            <strong style="color: var(--accent)"
-              >/Double Sided ISCM/Payroll/Payroll_Master.xlsx</strong
-            ><br />
-            Data is <strong>appended</strong> — existing records are never
-            overwritten.
           </div>
         </div>
 
@@ -4183,37 +4018,33 @@
         updateStickyBar();
         applyLockState();
       }
-      // App content stays hidden behind the auth gate until this runs —
-      // see initAuthGate() / unlockApp() further down.
-      function unlockApp() {
-        document.getElementById("auth-gate").classList.add("unlocked");
+      function startApp() {
+        // Drop leftover Microsoft session data from the removed sign-in.
+        [
+          "pr2_client_id",
+          "pr2_tenant_id",
+          "pr2_od_account",
+          "pr2_signin_redirect_intent",
+          "pr2_last_autosave_date",
+        ].forEach((k) => localStorage.removeItem(k));
+        Object.keys(localStorage).forEach((k) => {
+          if (
+            k.indexOf("msal.") === 0 ||
+            k.indexOf("login.microsoftonline") !== -1 ||
+            k.indexOf("login.windows.net") !== -1
+          )
+            localStorage.removeItem(k);
+        });
         render();
-        // On a brand new browser with no local staff — pull once from KV
         if (!localStorage.getItem("pr2_emps")) {
           kvInitialLoad();
         }
-        // Every load reconciles hours with the cloud copy — this is what
-        // would have prevented the "browser lost my data" incident (a new
-        // origin/domain, cleared storage, etc. all just merge back in).
         pullWeekDataInitial();
-        // Once-a-day background backup to Excel — see dailyAutoSave().
-        setTimeout(() => {
-          dailyAutoSave().catch(() => {});
-        }, 1500);
       }
 
-      // ═══════════════════════════════════════
-      //  SETTINGS
-      // ═══════════════════════════════════════
       function openSettings() {
         document.getElementById("s-worker-url").value =
           localStorage.getItem("pr2_worker_url") || "";
-        document.getElementById("s-client-id").value =
-          localStorage.getItem("pr2_client_id") || "";
-        document.getElementById("s-tenant-id").value =
-          localStorage.getItem("pr2_tenant_id") || "";
-        updateOdStatusUI();
-        // Show current sync status
         const lastSync = localStorage.getItem("pr2_last_sync");
         if (lastSync) setSyncStatus("ok", `Last synced: ${lastSync}`);
         else setSyncStatus("idle", "Not synced yet on this browser");
@@ -4225,291 +4056,11 @@
       function saveSettings() {
         const workerUrl = document.getElementById("s-worker-url").value.trim();
         if (workerUrl) localStorage.setItem("pr2_worker_url", workerUrl);
-        localStorage.setItem(
-          "pr2_client_id",
-          document.getElementById("s-client-id").value.trim()
-        );
-        localStorage.setItem(
-          "pr2_tenant_id",
-          document.getElementById("s-tenant-id").value.trim()
-        );
-        _msalInstance = null;
-        // If the auth gate is still up (first-time setup), re-check now
-        // that credentials exist — this flips it from "setup" to "sign in".
-        if (!document.getElementById("auth-gate").classList.contains("unlocked")) {
-          initAuthGate();
-        }
-      }
-      function updateOdStatusUI() {
-        const acct = localStorage.getItem("pr2_od_account");
-        const status = document.getElementById("od-status");
-        const statusText = document.getElementById("od-status-text");
-        const connectBtn = document.getElementById("btn-od-connect");
-        const disconnectBtn = document.getElementById("btn-od-disconnect");
-        const gearBtn = document.getElementById("gear-btn");
-        if (acct) {
-          const name = JSON.parse(acct).name || "Microsoft Account";
-          status.className = "od-status connected";
-          statusText.textContent = `Connected as ${name}`;
-          connectBtn.style.display = "none";
-          disconnectBtn.style.display = "";
-          if (gearBtn) gearBtn.classList.add("od-active");
-        } else {
-          status.className = "od-status disconnected";
-          statusText.textContent =
-            "Not connected — sign in to link your OneDrive";
-          connectBtn.style.display = "";
-          disconnectBtn.style.display = "none";
-          if (gearBtn) gearBtn.classList.remove("od-active");
-        }
-      }
-
-      // ═══════════════════════════════════════
-      //  MSAL / ONEDRIVE
-      // ═══════════════════════════════════════
-      //  MSAL v2 / ONEDRIVE
-      //  v3 dropped CDN support — using v2 which has stable window.msal global
-      // ═══════════════════════════════════════
-      const OD_FOLDER = "/Double Sided ISCM/Payroll";
-      const OD_FILE = "Payroll_Master.xlsx";
-      const OD_SCOPES = ["Files.ReadWrite", "User.Read", "Mail.Send"];
-
-      let _msalInstance = null;
-
-      // Wait for window.msal — should be instant with local file, small buffer for safety
-      function waitForMsal(timeout = 3000) {
-        return new Promise((resolve, reject) => {
-          if (typeof msal !== "undefined") {
-            resolve();
-            return;
-          }
-          const start = Date.now();
-          const check = setInterval(() => {
-            if (typeof msal !== "undefined") {
-              clearInterval(check);
-              resolve();
-            } else if (Date.now() - start > timeout) {
-              clearInterval(check);
-              reject(
-                new Error(
-                  "Auth library not found. Make sure msal-browser.min.js is in your GitHub repository."
-                )
-              );
-            }
-          }, 50);
-        });
-      }
-
-      // Set right before calling loginRedirect() so that after Microsoft
-      // redirects back and the page reloads from scratch, we know to show
-      // the "Redirecting..." state momentarily and can restore focus to
-      // whichever button (Settings vs. the auth gate) actually triggered
-      // sign-in — mostly cosmetic, since initAuthGate() drives the real
-      // unlock either way.
-      const REDIRECT_INTENT_KEY = "pr2_signin_redirect_intent";
-
-      async function getMsal() {
-        const clientId = localStorage.getItem("pr2_client_id") || "";
-        const tenantId = localStorage.getItem("pr2_tenant_id") || "";
-        if (!clientId || !tenantId)
-          throw new Error(
-            "Paste your Client ID and Tenant ID in ⚙️ Settings first."
-          );
-        await waitForMsal();
-        if (!_msalInstance) {
-          _msalInstance = new msal.PublicClientApplication({
-            auth: {
-              clientId,
-              authority: `https://login.microsoftonline.com/${tenantId}`,
-              redirectUri: "https://payroll.wareplatform.com/",
-            },
-            cache: {
-              cacheLocation: "localStorage",
-              storeAuthStateInCookie: true,
-            },
-          });
-          // Must run once per instance, before anything else touches MSAL —
-          // this is what actually completes a sign-in after Microsoft
-          // redirects back to the app (loginRedirect() itself just
-          // navigates away; the result only becomes available here, on
-          // the reload that follows).
-          try {
-            const resp = await _msalInstance.handleRedirectPromise();
-            if (resp && resp.account) {
-              localStorage.setItem(
-                "pr2_od_account",
-                JSON.stringify({
-                  name: resp.account.name,
-                  username: resp.account.username,
-                  homeAccountId: resp.account.homeAccountId,
-                })
-              );
-              updateOdStatusUI();
-            }
-          } catch (e) {
-            console.error("MSAL redirect handling failed:", e);
-          }
-        }
-        return _msalInstance;
-      }
-
-      // Shared MSAL sign-in flow — used by both the Settings "Sign in with
-      // Microsoft" button and the full-app auth gate. Uses a full-page
-      // REDIRECT rather than a popup: popups are unreliable on iOS Safari
-      // (they can silently fail to return, leaving MSAL's internal
-      // "interaction in progress" flag stuck, which then blocks every
-      // future sign-in attempt with an interaction_in_progress error until
-      // the tab is closed). A redirect just navigates the whole page to
-      // Microsoft and back, which works consistently on mobile.
-      async function performMsalSignIn(intent) {
-        const ms = await getMsal();
-        if (intent) localStorage.setItem(REDIRECT_INTENT_KEY, intent);
-        await ms.loginRedirect({ scopes: OD_SCOPES, prompt: "select_account" });
-        // Execution does not meaningfully continue past this line — the
-        // page is navigating away. Anything after this only runs if the
-        // redirect itself failed to start.
-      }
-
-      async function odSignIn() {
-        const btn = document.getElementById("btn-od-connect");
-        const origText = btn.textContent;
-        btn.textContent = "⏳ Redirecting...";
-        btn.disabled = true;
-        try {
-          await performMsalSignIn("settings");
-        } catch (e) {
-          const msg = e.message || e.errorCode || String(e);
-          if (!msg.includes("user_cancelled") && !msg.includes("cancelled")) {
-            showToast("❌ Sign in failed: " + msg);
-          }
-          btn.textContent = origText;
-          btn.disabled = false;
-        }
-      }
-
-      function odSignOut() {
-        _msalInstance = null;
-        localStorage.removeItem("pr2_od_account");
-        updateOdStatusUI();
-        showToast("Signed out of OneDrive.");
-        // Signing out re-locks the whole app, not just the Excel/Email
-        // integration, since Microsoft sign-in doubles as the access gate.
-        initAuthGate();
-      }
-
-      // ═══════════════════════════════════════
-      //  AUTH GATE
-      //  The entire app is hidden behind this until a real Microsoft
-      //  token can be silently (or interactively) acquired. Unlike the
-      //  KV staff sync, this is a genuine check against Microsoft's own
-      //  servers via MSAL — not just a localStorage flag — though anyone
-      //  with dev tools could still inspect localStorage directly, since
-      //  there is no backend here to enforce this server-side.
-      // ═══════════════════════════════════════
-      async function initAuthGate() {
-        const clientId = localStorage.getItem("pr2_client_id") || "";
-        const tenantId = localStorage.getItem("pr2_tenant_id") || "";
-        const signinSection = document.getElementById("auth-gate-signin");
-        const setupSection = document.getElementById("auth-gate-setup");
-        if (!clientId || !tenantId) {
-          signinSection.style.display = "none";
-          setupSection.style.display = "";
-          return;
-        }
-        signinSection.style.display = "";
-        setupSection.style.display = "none";
-        try {
-          // getMsal() must run first, unconditionally — on the page load
-          // right after Microsoft redirects back, it's the one that
-          // processes that response and writes pr2_od_account. Checking
-          // localStorage before calling it would miss a fresh sign-in.
-          const ms = await getMsal();
-          const acctData = localStorage.getItem("pr2_od_account");
-          if (!acctData) throw new Error("not signed in");
-          const acctInfo = JSON.parse(acctData);
-          const accounts = ms.getAllAccounts();
-          const account =
-            accounts.find((a) => a.homeAccountId === acctInfo.homeAccountId) ||
-            accounts[0];
-          if (!account) throw new Error("session expired");
-          // Silent-only from here — unlike getOdToken(), this must NEVER
-          // fall back to an interactive popup/redirect on its own, since
-          // this runs passively on every load.
-          await ms.acquireTokenSilent({ scopes: OD_SCOPES, account });
-          const intent = localStorage.getItem(REDIRECT_INTENT_KEY);
-          if (intent) {
-            localStorage.removeItem(REDIRECT_INTENT_KEY);
-            showToast(`✓ Signed in as ${acctInfo.name || "your account"}`);
-          }
-          unlockApp();
-        } catch (e) {
-          // TEMPORARY BYPASS (2026-10-21): MFA issues with Microsoft 365 admin account
-          // are locking the user out of Azure/Entra. Unlock the app anyway so payroll
-          // tracking continues. OneDrive Excel saves and wage emails will still fail
-          // until Microsoft sign-in works again. Remove this catch body and restore
-          // the original empty catch to re-enable the auth gate.
-          console.warn("Auth gate bypassed (temporary MFA workaround):", e);
-          showToast("⚠ Temporary bypass active — Microsoft sign-in skipped due to MFA issues");
-          unlockApp();
-        }
-      }
-
-      async function gateSignIn() {
-        const btn = document.getElementById("gate-signin-btn");
-        const errEl = document.getElementById("gate-error");
-        const origText = btn.textContent;
-        btn.textContent = "⏳ Redirecting...";
-        btn.disabled = true;
-        errEl.textContent = "";
-        try {
-          await performMsalSignIn("gate");
-          // Page is navigating to Microsoft now — nothing below this line
-          // runs unless the redirect itself failed to start.
-        } catch (e) {
-          const msg = e.message || e.errorCode || String(e);
-          if (!msg.includes("user_cancelled") && !msg.includes("cancelled")) {
-            errEl.textContent = "❌ Sign in failed: " + msg;
-          }
-          btn.textContent = origText;
-          btn.disabled = false;
-        }
-      }
-      initAuthGate();
-
-      async function getOdToken() {
-        const acctData = localStorage.getItem("pr2_od_account");
-        if (!acctData)
-          throw new Error(
-            "Not signed in. Open ⚙️ Settings and sign in with Microsoft."
-          );
-        const ms = await getMsal();
-        const acctInfo = JSON.parse(acctData);
-        const accounts = ms.getAllAccounts();
-        const account =
-          accounts.find((a) => a.homeAccountId === acctInfo.homeAccountId) ||
-          accounts[0];
-        if (!account)
-          throw new Error(
-            "Session expired. Please sign in again via ⚙️ Settings."
-          );
-        try {
-          const resp = await ms.acquireTokenSilent({
-            scopes: OD_SCOPES,
-            account,
-          });
-          return resp.accessToken;
-        } catch (e) {
-          const resp = await ms.acquireTokenPopup({
-            scopes: OD_SCOPES,
-            account,
-          });
-          return resp.accessToken;
-        }
       }
 
       // ─── Build the worksheet rows for this week (QuickBooks Online Payroll format) ───
-      function buildExcelRows() {
-        const wk = weekKey();
+      function buildExcelRows(wk) {
+        wk = wk || weekKey();
         const mon = new Date(wk + "T00:00:00");
         const fri = new Date(mon);
         fri.setDate(mon.getDate() + 4);
@@ -4551,7 +4102,7 @@
       // ═══════════════════════════════════════
       //  XLSX BUILDER — hand-crafted, no SheetJS
       //  An .xlsx is a ZIP of XML files. We build each part manually
-      //  so Excel 365 gets a perfectly compliant file every time.
+      //  so Excel opens a compliant file every time.
       // ═══════════════════════════════════════
 
       // Load JSZip on demand (small, reliable, no compatibility issues)
@@ -4572,33 +4123,6 @@
           });
         }
         return _jszipPromise;
-      }
-
-      // Load SheetJS on demand — used only to READ back an existing
-      // Payroll_Master.xlsx before appending to it. A hand-rolled regex
-      // parser kept breaking on real-world files re-saved by Excel,
-      // LibreOffice, or Numbers (rich-text shared-string runs, inline
-      // strings, sparse cells with no "r" attribute, etc.) — each fix
-      // only narrowed the next failure mode. SheetJS handles all of that
-      // correctly by construction, so we stop patching this by hand.
-      let _xlsxLibPromise = null;
-      function loadXLSXLib() {
-        if (!_xlsxLibPromise) {
-          _xlsxLibPromise = new Promise((resolve, reject) => {
-            if (window.XLSX) {
-              resolve(window.XLSX);
-              return;
-            }
-            const s = document.createElement("script");
-            s.src =
-              "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-            s.onload = () => resolve(window.XLSX);
-            s.onerror = () =>
-              reject(new Error("XLSX parsing library failed to load."));
-            document.head.appendChild(s);
-          });
-        }
-        return _xlsxLibPromise;
       }
 
       // Escape XML special characters
@@ -4824,9 +4348,6 @@
         return blob;
       }
 
-      // ═══════════════════════════════════════
-      //  WAGE NOTICE EMAILS — sent via Microsoft Graph, same sign-in as OneDrive
-      // ═══════════════════════════════════════
       function weekRangeLabel(wk) {
         const mon = new Date(wk + "T00:00:00");
         const fri = new Date(mon);
@@ -4838,41 +4359,27 @@
         )}`;
       }
 
-      async function sendGraphMail(token, emp, wage, wk) {
+      function wageMailto(emp, wage, wk) {
         const firstName = (emp.name || "").split(" ")[0] || emp.name;
-        const subject = "Your weekly wage is on its way 💵";
-        const html = `
-          <p>Hi ${escH(firstName)},</p>
-          <p>Your wages for the week of <strong>${weekRangeLabel(
-            wk
-          )}</strong> — <strong>$${wage.toFixed(
-          2
-        )}</strong> — are on their way to you.</p>
-          <p>Thank you for your hard work this week — it really doesn't go unnoticed. We're glad to have you on the team!</p>
-          <p style="margin-top:20px;">— Double Sided ISCM LLC</p>
-        `;
-        const res = await fetch(
-          "https://graph.microsoft.com/v1.0/me/sendMail",
-          {
-            method: "POST",
-            headers: {
-              Authorization: "Bearer " + token,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              message: {
-                subject,
-                body: { contentType: "HTML", content: html },
-                toRecipients: [{ emailAddress: { address: emp.email } }],
-              },
-              saveToSentItems: true,
-            }),
-          }
+        const subject = "Your weekly wage is on its way";
+        const body =
+          `Hi ${firstName},\n\n` +
+          `Your wages for the week of ${weekRangeLabel(wk)} — $${wage.toFixed(
+            2
+          )} — are on their way to you.\n\n` +
+          `Thank you for your hard work this week — it really doesn't go unnoticed. We're glad to have you on the team!\n\n` +
+          `— Double Sided ISCM LLC`;
+        return (
+          "mailto:" +
+          encodeURIComponent(emp.email) +
+          "?subject=" +
+          encodeURIComponent(subject) +
+          "&body=" +
+          encodeURIComponent(body)
         );
-        if (!res.ok) throw new Error(`${res.status}`);
       }
 
-      async function sendWageNotices() {
+      function sendWageNotices() {
         const wk = weekKey();
         const recipients = [];
         const skipped = [];
@@ -4880,7 +4387,7 @@
           .filter((e) => !e.archived && !e.deleted)
           .forEach((emp) => {
             const r = calcWage(emp, wk);
-            if (r.hours === 0) return; // no shift logged this week
+            if (r.hours === 0) return;
             if (!emp.email) {
               skipped.push(emp.name);
               return;
@@ -4899,7 +4406,7 @@
 
         const alreadySent = weekData[wk]?._wageNoticesSent;
         const msg =
-          `Send a thank-you wage notice to ${recipients.length} employee${
+          `Open a mail draft for ${recipients.length} employee${
             recipients.length === 1 ? "" : "s"
           } for the week of ${weekRangeLabel(wk)}?` +
           (skipped.length
@@ -4908,244 +4415,98 @@
               )})`
             : "") +
           (alreadySent
-            ? " Notices were already sent for this week — this will send again."
+            ? " Notices were already opened for this week — this will open them again."
             : "");
 
         showConfirm(
           "Send Wage Notices?",
           msg,
-          "Send",
+          "Open Mail",
           "btn-confirm-green",
-          async () => {
-            const btn = document.getElementById("wage-notice-btn");
-            const orig = btn.textContent;
-            btn.disabled = true;
-            btn.textContent = "⏳ Sending...";
-            const failed = [];
-            let sent = 0;
-            try {
-              const token = await getOdToken();
-              for (const { emp, wage } of recipients) {
-                try {
-                  await sendGraphMail(token, emp, wage, wk);
-                  sent++;
-                } catch (e) {
-                  failed.push(emp.name);
-                }
-              }
-              weekData[wk] ??= {};
-              weekData[wk]._wageNoticesSent = true;
-              save();
-              showToast(
-                failed.length
-                  ? `✓ Sent ${sent}. ⚠️ Failed for: ${failed.join(", ")}`
-                  : `✓ Sent wage notices to ${sent} employee${
-                      sent === 1 ? "" : "s"
-                    }!`
-              );
-            } catch (e) {
-              showToast("❌ " + e.message);
-            }
-            btn.disabled = false;
-            btn.textContent = orig;
+          () => {
+            recipients.forEach(({ emp, wage }, i) => {
+              const a = document.createElement("a");
+              a.href = wageMailto(emp, wage, wk);
+              a.style.display = "none";
+              document.body.appendChild(a);
+              setTimeout(() => {
+                a.click();
+                a.remove();
+              }, i * 700);
+            });
+            weekData[wk] ??= {};
+            weekData[wk]._wageNoticesSent = true;
+            save();
+            showToast(
+              recipients.length === 1
+                ? "Opening your mail app…"
+                : `Opening mail drafts for ${recipients.length} employees. Some phones only open the first — send it, then tap again.`
+            );
           }
         );
       }
 
-      // ─── Save to OneDrive — no external Excel library needed ───
+      const EXCEL_HEADER = [
+        "Employee Name",
+        "Pay Period Start",
+        "Pay Period End",
+        "Pay Date",
+        "Regular Hours",
+        "Overtime Hours",
+        "Hourly Rate",
+        "Regular Pay",
+        "Overtime Pay",
+        "Gross Pay",
+        "Notes",
+      ];
+      const EXCEL_NUM_COLS = new Set([4, 5, 6, 7, 8, 9]);
+
       async function saveToExcel() {
         const btn = document.getElementById("excel-btn");
+        const idle = "📊 Download Excel";
         btn.classList.add("loading");
-        btn.textContent = "⏳ Saving...";
+        btn.textContent = "⏳ Building...";
         try {
-          const newRows = buildExcelRows();
-          // newRows may be empty if no days toggled — we still write header + any existing rows
-
-          const token = await getOdToken();
-          const filePath = `${OD_FOLDER}/${OD_FILE}`;
-          const graphBase = "https://graph.microsoft.com/v1.0/me";
-          const authHdr = { Authorization: "Bearer " + token };
-
-          const HEADER = [
-            "Employee Name",
-            "Pay Period Start",
-            "Pay Period End",
-            "Pay Date",
-            "Regular Hours",
-            "Overtime Hours",
-            "Hourly Rate",
-            "Regular Pay",
-            "Overtime Pay",
-            "Gross Pay",
-            "Notes",
-          ];
-
-          const NUM_COLS = new Set([4, 5, 6, 7, 8, 9]);
-
-          // ── Fetch existing rows if file exists ──
-          let existingRows = [];
-          const dlRes = await fetch(
-            `${graphBase}/drive/root:${filePath}:/content`,
-            { headers: authHdr }
+          const keys = Object.keys(weekData)
+            .filter((k) => /^\d{4}-\d{2}-\d{2}$/.test(k))
+            .sort();
+          const rows = [];
+          keys.forEach((wk) => rows.push(...buildExcelRows(wk)));
+          if (!rows.length) {
+            showToast("Nothing to export yet.");
+            btn.textContent = idle;
+            btn.classList.remove("loading");
+            return;
+          }
+          const blob = await buildXlsxBlob(
+            [EXCEL_HEADER, ...rows],
+            "Payroll",
+            EXCEL_NUM_COLS
           );
-          if (dlRes.ok) {
-            try {
-              const XLSX = await loadXLSXLib();
-              const buf = await dlRes.arrayBuffer();
-              const wb = XLSX.read(buf, { type: "array" });
-              const sheet = wb.Sheets[wb.SheetNames[0]];
-              if (sheet) {
-                // header:1 + defval gives back plain arrays sized to the
-                // sheet's actual column range, with every gap filled in —
-                // this is what a hand-rolled parser kept getting wrong for
-                // sparse rows (cells a tool omitted rather than writing
-                // empty), which was shifting later columns out of place.
-                const allRows = XLSX.utils.sheet_to_json(sheet, {
-                  header: 1,
-                  raw: true,
-                  defval: "",
-                });
-                existingRows = allRows
-                  .slice(1) // row 1 is the header
-                  .map((r) => {
-                    const row = (r || [])
-                      .slice(0, 11)
-                      .map((v) => (v == null ? "" : v));
-                    while (row.length < 11) row.push("");
-                    return row;
-                  })
-                  // Skip blank rows, and the TOTAL row written by a
-                  // previous save — it's regenerated fresh below, so
-                  // carrying it forward as data would leave stray TOTAL
-                  // rows scattered through the sheet on every save.
-                  .filter(
-                    (row) => row.some((v) => v !== "") && row[0] !== "TOTAL"
-                  );
-              }
-            } catch (parseErr) {
-              // Do NOT fall back to existingRows = [] here — that silently
-              // overwrites the file with only this week's rows, destroying
-              // every prior week of payroll history. If we can't safely
-              // read what's already there, abort the save instead so the
-              // existing file on OneDrive is left untouched.
-              throw new Error(
-                `Could not read the existing Excel file — save aborted to protect your existing data. Nothing was overwritten. (${parseErr.message})`
-              );
-            }
-          } else if (dlRes.status === 404) {
-            await ensureOdFolder(token, OD_FOLDER);
-          } else if (dlRes.status === 423) {
-            throw new Error(
-              "File is locked — close it in Excel first, then try again."
-            );
-          } else {
-            throw new Error(`OneDrive error ${dlRes.status}`);
-          }
-
-          // ── Deduplicate: remove existing rows that match the same employee + pay period
-          //    being saved now, so re-saving a week replaces rather than stacks rows.
-          if (newRows.length) {
-            const newKeys = new Set(
-              newRows.map((r) => String(r[0]) + "|" + String(r[1]))
-            );
-            existingRows = existingRows.filter(
-              (r) => !newKeys.has(String(r[0]) + "|" + String(r[1]))
-            );
-          }
-
-          // ── Build and upload ──
-          const allRows = [HEADER, ...existingRows, ...newRows];
-          const blob = await buildXlsxBlob(allRows, "Payroll", NUM_COLS);
-
-          const upRes = await fetch(
-            `${graphBase}/drive/root:${filePath}:/content`,
-            {
-              method: "PUT",
-              headers: {
-                ...authHdr,
-                "Content-Type":
-                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-              },
-              body: blob,
-            }
+          const filename = `Payroll_${new Date().toISOString().slice(0, 10)}.xlsx`;
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1500);
+          showToast(
+            `✓ Downloaded ${rows.length} row${rows.length === 1 ? "" : "s"}`
           );
-          if (!upRes.ok) {
-            if (upRes.status === 423)
-              throw new Error(
-                "File is locked — close it in Excel first, then try again."
-              );
-            throw new Error(
-              `Upload failed: ${upRes.status} ${upRes.statusText}`
-            );
-          }
-
-          const msg = newRows.length
-            ? `✓ Saved ${newRows.length} row${
-                newRows.length !== 1 ? "s" : ""
-              } to OneDrive Excel!`
-            : "✓ File saved to OneDrive (header only — no active days this week)";
-          showToast(msg);
-          btn.textContent = "✓ Saved!";
+          btn.textContent = "✓ Downloaded!";
           setTimeout(() => {
-            btn.textContent = "📊 Save to Excel";
+            btn.textContent = idle;
           }, 3000);
-          btn.classList.remove("loading");
-          return true;
         } catch (e) {
-          showToast("❌ " + e.message);
-          btn.textContent = "📊 Save to Excel";
+          showToast("❌ " + (e.message || e));
+          btn.textContent = idle;
         }
         btn.classList.remove("loading");
-        return false;
       }
 
-      // ─── Daily auto-backup — once per calendar day, silently back up
-      // the current week to Excel so a lost/cleared browser can never
-      // wipe out more than a day's unsaved hours. Reuses saveToExcel()
-      // as-is (same visible button feedback) rather than a separate
-      // silent path, so it's never a surprise what just happened.
-      async function dailyAutoSave() {
-        const today = new Date().toISOString().slice(0, 10);
-        if (localStorage.getItem("pr2_last_autosave_date") === today) return;
-        if (!localStorage.getItem("pr2_od_account")) return; // not signed in yet
-        const ok = await saveToExcel();
-        // Only mark today done on success — a failure (offline, token
-        // expired, file locked, etc.) should retry next time the app is
-        // opened today rather than silently skip a whole day.
-        if (ok) localStorage.setItem("pr2_last_autosave_date", today);
-      }
-
-      // Ensure folder path exists on OneDrive
-      async function ensureOdFolder(token, folderPath) {
-        const parts = folderPath.split("/").filter(Boolean);
-        let current = "";
-        for (const part of parts) {
-          const r = await fetch(
-            `https://graph.microsoft.com/v1.0/me/drive/root:${current}/${part}`,
-            {
-              headers: { Authorization: "Bearer " + token },
-            }
-          );
-          if (r.status === 404) {
-            const parentUrl = current
-              ? `https://graph.microsoft.com/v1.0/me/drive/root:${current}:/children`
-              : `https://graph.microsoft.com/v1.0/me/drive/root/children`;
-            await fetch(parentUrl, {
-              method: "POST",
-              headers: {
-                Authorization: "Bearer " + token,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                name: part,
-                folder: {},
-                "@microsoft.graph.conflictBehavior": "fail",
-              }),
-            });
-          }
-          current += "/" + part;
-        }
-      }
+      startApp();
 
       // iOS install banner
       (function () {
